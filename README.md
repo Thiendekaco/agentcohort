@@ -15,14 +15,17 @@ shipping.
 ## Install
 
 ```bash
-npm i agent-force
+npm i @thiendekaco/agent-force
 ```
 
 Or run it without installing:
 
 ```bash
-npx agent-force init
+npx @thiendekaco/agent-force init
 ```
+
+> The npm package is `@thiendekaco/agent-force`; the CLI command it installs is
+> just `agent-force`.
 
 ## Quick start
 
@@ -160,8 +163,8 @@ gets published.** Every push to `main` runs the
 
 1. installs, builds and runs the full test suite;
 2. publishes the **current** `package.json` version to npm —
-   https://www.npmjs.com/package/agent-force (so the very first release is
-   exactly `0.1.0`, nothing skipped);
+   https://www.npmjs.com/package/@thiendekaco/agent-force (so the very first
+   release is exactly `0.1.0`, nothing skipped);
 3. creates the annotated git tag `vX.Y.Z` on the published commit;
 4. bumps to the next dev version (`patch` by default) and pushes a
    `chore(release): published vX.Y.Z, open vX.Y.(Z+1) [skip ci]` commit back

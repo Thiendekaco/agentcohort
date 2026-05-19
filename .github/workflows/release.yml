@@ -69,16 +69,16 @@ jobs:
       - name: Check if already published
         id: published
         run: |
-          if npm view "agent-force@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
+          if npm view "@thiendekaco/agent-force@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "agent-force@${{ steps.ver.outputs.version }} is already on npm — will skip publish."
+            echo "@thiendekaco/agent-force@${{ steps.ver.outputs.version }} is already on npm — will skip publish."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish to npm
         if: steps.published.outputs.exists == 'false'
-        run: npm publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -1,6 +1,6 @@
 # Agent Force Routing Rules
 
-> Installed and managed by [`agent-force`](https://www.npmjs.com/package/agent-force).
+> Installed and managed by [`agent-force`](https://www.npmjs.com/package/@thiendekaco/agent-force).
 > This section is owned by the tool: re-running `agent-force init` may update
 > it. Put your own project notes **outside** this section so they are never
 > touched.

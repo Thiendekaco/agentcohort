@@ -30,7 +30,12 @@ export function getVersion(): string {
     try {
       if (!existsSync(c)) continue;
       const pkg = JSON.parse(readFileSync(c, 'utf8')) as { name?: string; version?: string };
-      if (pkg.name === 'agent-force' && typeof pkg.version === 'string') {
+      // Scope-resilient: matches "agent-force" and "@scope/agent-force".
+      if (
+        typeof pkg.version === 'string' &&
+        typeof pkg.name === 'string' &&
+        pkg.name.replace(/^@[^/]+\//, '') === 'agent-force'
+      ) {
         return pkg.version;
       }
     } catch {
