@@ -1,0 +1,44 @@
+{
+  "name": "agent-force",
+  "version": "0.1.0",
+  "description": "Install a principal/staff-level Claude Code AI software engineering organization (agents + workflows + routing rules) into any project with one command.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agents",
+    "subagents",
+    "workflow",
+    "ai",
+    "cli",
+    "developer-tools",
+    "code-review",
+    "bug-audit"
+  ],
+  "license": "MIT",
+  "author": "agent-force",
+  "type": "commonjs",
+  "bin": {
+    "agent-force": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node scripts/copy-templates.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
