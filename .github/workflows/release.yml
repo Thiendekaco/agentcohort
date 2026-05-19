@@ -1,13 +1,20 @@
 name: Release
 
-# On every push to main: build, test, auto-bump the version, publish to npm,
-# then push the version-bump commit + tag back to main.
+# On every push to main: build, test, then publish the version currently in
+# package.json AS-IS, tag it, and only AFTERWARDS bump to the next dev version.
+# This makes the first published release exactly 0.1.0 (no skipped version).
+#
+# Model: the version in package.json IS the version that gets published.
+#  - To cut a normal release: just push to main (publishes the pending version).
+#  - To do a minor/major: bump package.json yourself in a regular commit, or
+#    use "Run workflow" and pick how the *next* pending version is bumped.
 #
 # Loop safety:
-#  - the bump commit message contains "[skip ci]", which GitHub honors to skip
-#    the workflow for that push;
-#  - pushes made with GITHUB_TOKEN do not trigger new workflow runs anyway;
-#  - the job `if` is a third belt-and-suspenders guard.
+#  - the post-publish commit message contains "[skip ci]" (GitHub skips it);
+#  - GITHUB_TOKEN pushes do not trigger new workflow runs anyway;
+#  - the job `if` is a third guard.
+#  - if the pending version is already on npm, publish is skipped (safe
+#    re-runs, race-safe) and the job still succeeds.
 #
 # Requires repo secret `NPM_TOKEN` (an npm *Automation* token — works with 2FA).
 
@@ -16,8 +23,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      release_type:
-        description: "Semver bump"
+      next_bump:
+        description: "How to bump the NEXT pending version after publishing"
         type: choice
         options: [patch, minor, major]
         default: patch
@@ -55,18 +62,43 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Read pending version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version
-        run: npm version "${{ github.event.inputs.release_type || 'patch' }}" -m "chore(release): %s [skip ci]"
+      - name: Check if already published
+        id: published
+        run: |
+          if npm view "agent-force@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "agent-force@${{ steps.ver.outputs.version }} is already on npm — will skip publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish to npm
+        if: steps.published.outputs.exists == 'false'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Push commit and tag
-        run: git push --follow-tags origin HEAD:main
+      - name: Configure git identity
+        if: steps.published.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag the published version
+        if: steps.published.outputs.exists == 'false'
+        run: git tag -a "v${{ steps.ver.outputs.version }}" -m "v${{ steps.ver.outputs.version }}"
+
+      - name: Bump to next dev version
+        if: steps.published.outputs.exists == 'false'
+        run: npm version "${{ github.event.inputs.next_bump || 'patch' }}" --no-git-tag-version
+
+      - name: Commit bump and push commit + tag
+        if: steps.published.outputs.exists == 'false'
+        run: |
+          NEXT=$(node -p "require('./package.json').version")
+          git commit -am "chore(release): published v${{ steps.ver.outputs.version }}, open v$NEXT [skip ci]"
+          git push --follow-tags origin HEAD:main

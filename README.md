@@ -154,18 +154,25 @@ npm test           # vitest
 
 ## Releases
 
-Publishing is automated. **Every push to `main`** runs the
+Publishing is automated. **The version in `package.json` is the version that
+gets published.** Every push to `main` runs the
 [`Release`](.github/workflows/release.yml) workflow, which:
 
 1. installs, builds and runs the full test suite;
-2. auto-bumps the version (`patch` by default — choose `minor`/`major` via the
-   *Run workflow* button on the Actions tab);
-3. publishes to npm — https://www.npmjs.com/package/agent-force;
-4. pushes the `chore(release): vX.Y.Z [skip ci]` commit and the `vX.Y.Z` git
-   tag back to `main`.
+2. publishes the **current** `package.json` version to npm —
+   https://www.npmjs.com/package/agent-force (so the very first release is
+   exactly `0.1.0`, nothing skipped);
+3. creates the annotated git tag `vX.Y.Z` on the published commit;
+4. bumps to the next dev version (`patch` by default) and pushes a
+   `chore(release): published vX.Y.Z, open vX.Y.(Z+1) [skip ci]` commit back
+   to `main`.
 
-The `[skip ci]` marker prevents the release commit from re-triggering the
-workflow (no publish loop).
+So: to cut a normal release, just push to `main`. To release a `minor`/`major`
+instead, bump `package.json` yourself in a regular commit before pushing (or
+use the *Run workflow* button to control how the **next** pending version is
+opened). If the pending version is already on npm, publish is skipped and the
+job still succeeds (safe re-runs). The `[skip ci]` marker stops the release
+commit from re-triggering the workflow (no publish loop).
 
 **One-time setup:** add an npm **Automation** access token as the repository
 secret `NPM_TOKEN` (GitHub → Settings → Secrets and variables → Actions →
