@@ -152,6 +152,26 @@ npm run build      # tsc -> dist/, then copies templates
 npm test           # vitest
 ```
 
+## Releases
+
+Publishing is automated. **Every push to `main`** runs the
+[`Release`](.github/workflows/release.yml) workflow, which:
+
+1. installs, builds and runs the full test suite;
+2. auto-bumps the version (`patch` by default — choose `minor`/`major` via the
+   *Run workflow* button on the Actions tab);
+3. publishes to npm — https://www.npmjs.com/package/agent-force;
+4. pushes the `chore(release): vX.Y.Z [skip ci]` commit and the `vX.Y.Z` git
+   tag back to `main`.
+
+The `[skip ci]` marker prevents the release commit from re-triggering the
+workflow (no publish loop).
+
+**One-time setup:** add an npm **Automation** access token as the repository
+secret `NPM_TOKEN` (GitHub → Settings → Secrets and variables → Actions →
+*New repository secret*). Until that secret exists, the workflow's *Publish*
+step will fail while build/test still pass.
+
 ## License
 
 MIT

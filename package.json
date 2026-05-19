@@ -29,6 +29,17 @@
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Thiendekaco/agent-forge.git"
+  },
+  "homepage": "https://github.com/Thiendekaco/agent-forge#readme",
+  "bugs": {
+    "url": "https://github.com/Thiendekaco/agent-forge/issues"
+  },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json && node scripts/copy-templates.mjs",

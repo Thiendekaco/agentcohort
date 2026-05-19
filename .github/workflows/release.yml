@@ -1,0 +1,72 @@
+name: Release
+
+# On every push to main: build, test, auto-bump the version, publish to npm,
+# then push the version-bump commit + tag back to main.
+#
+# Loop safety:
+#  - the bump commit message contains "[skip ci]", which GitHub honors to skip
+#    the workflow for that push;
+#  - pushes made with GITHUB_TOKEN do not trigger new workflow runs anyway;
+#  - the job `if` is a third belt-and-suspenders guard.
+#
+# Requires repo secret `NPM_TOKEN` (an npm *Automation* token — works with 2FA).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Semver bump"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        run: npm version "${{ github.event.inputs.release_type || 'patch' }}" -m "chore(release): %s [skip ci]"
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push commit and tag
+        run: git push --follow-tags origin HEAD:main
