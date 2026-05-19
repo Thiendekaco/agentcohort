@@ -53,7 +53,7 @@ describe('runInit - fresh project', () => {
     expect(commands).toContain('auto-flow.md');
 
     const claude = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
-    expect(claude).toContain('# Agent Force Routing Rules');
+    expect(claude).toContain('# Agentcrew Routing Rules');
     expect(claude).toContain('# Project Guidance for Claude Code');
 
     expect(result.actions.every((a) => a.disposition === 'created')).toBe(true);
@@ -161,13 +161,13 @@ describe('runInit - CLAUDE.md handling', () => {
 
     const after = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
     expect(after).toContain('Important project notes the user wrote.');
-    expect(after).toContain('# Agent Force Routing Rules');
+    expect(after).toContain('# Agentcrew Routing Rules');
   });
 
   it('non-interactive leaves a DIFFERING existing section untouched (skip)', async () => {
     const cwd = project();
     const doc =
-      '# My Project\n\nnotes\n\n# Agent Force Routing Rules\n\nMY CUSTOM RULES\n';
+      '# My Project\n\nnotes\n\n# Agentcrew Routing Rules\n\nMY CUSTOM RULES\n';
     writeFileSync(join(cwd, 'CLAUDE.md'), doc, 'utf8');
 
     const result = await runInit(baseOpts(cwd));
@@ -179,7 +179,7 @@ describe('runInit - CLAUDE.md handling', () => {
   it('--force replaces the section but preserves surrounding content', async () => {
     const cwd = project();
     const doc =
-      '# My Project\n\nkeep me\n\n# Agent Force Routing Rules\n\nOLD RULES\n\n# Other\n\nkeep me too\n';
+      '# My Project\n\nkeep me\n\n# Agentcrew Routing Rules\n\nOLD RULES\n\n# Other\n\nkeep me too\n';
     writeFileSync(join(cwd, 'CLAUDE.md'), doc, 'utf8');
 
     const result = await runInit(baseOpts(cwd, { force: true }));
@@ -191,7 +191,7 @@ describe('runInit - CLAUDE.md handling', () => {
     expect(after).toContain('keep me too');
     expect(after).toContain('# Other');
     expect(after).not.toContain('OLD RULES');
-    expect(after.match(/# Agent Force Routing Rules/g)?.length).toBe(1);
+    expect(after.match(/# Agentcrew Routing Rules/g)?.length).toBe(1);
   });
 
   it('reports the section unchanged on a second run (idempotent)', async () => {

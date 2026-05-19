@@ -1,5 +1,5 @@
 /**
- * Pure helpers for managing the Agent Force section inside a project CLAUDE.md.
+ * Pure helpers for managing the Agentcrew section inside a project CLAUDE.md.
  *
  * Design goals:
  *  - Never destroy the user's existing CLAUDE.md content.
@@ -10,7 +10,7 @@
  *    mistaken for a real heading boundary.
  */
 
-export const SECTION_TITLE = '# Agent Force Routing Rules';
+export const SECTION_TITLE = '# Agentcrew Routing Rules';
 
 interface LineSpan {
   /** Index of the first character of the line (after the previous '\n'). */
@@ -124,7 +124,7 @@ export interface UpsertResult {
 }
 
 /**
- * Insert or replace the Agent Force section.
+ * Insert or replace the Agentcrew section.
  *  - Absent  -> appended at the end, separated by a blank line.
  *  - Present -> the existing section block is replaced in place; everything
  *               before and after is preserved verbatim.
@@ -157,7 +157,7 @@ export function buildInitialClaudeMd(sectionMarkdown: string): string {
     '# Project Guidance for Claude Code',
     '',
     'This file is read by Claude Code at the start of every session.',
-    'The section below was installed by `agent-force` and wires up the',
+    'The section below was installed by `agentcrew` and wires up the',
     'AI software-engineering organization (agents + workflows).',
     '',
   ].join('\n');

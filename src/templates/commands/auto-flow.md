@@ -1,5 +1,5 @@
 ---
-description: Classify the task and route it to the correct Agent Force workflow.
+description: Classify the task and route it to the correct Agentcrew workflow.
 argument-hint: <describe the task, paste the bug, or point at the diff>
 ---
 

@@ -47,7 +47,7 @@ describe('parseArgs', () => {
 describe('helpText', () => {
   it('documents the tool and the workflow commands', () => {
     const h = helpText();
-    expect(h).toContain('agent-force');
+    expect(h).toContain('agentcrew');
     expect(h).toContain('/auto-flow');
     expect(h).toContain('/bug-audit');
     expect(h).toContain('NEVER');

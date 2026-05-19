@@ -1,6 +1,6 @@
 {
-  "name": "@thiendekaco/agent-force",
-  "version": "0.1.1",
+  "name": "agentcrew",
+  "version": "0.1.0",
   "description": "Install a principal/staff-level Claude Code AI software engineering organization (agents + workflows + routing rules) into any project with one command.",
   "keywords": [
     "claude",
@@ -15,9 +15,10 @@
     "bug-audit"
   ],
   "license": "MIT",
-  "author": "agent-force",
+  "author": "agentcrew",
   "type": "commonjs",
   "bin": {
+    "agentcrew": "dist/cli.js",
     "agent-force": "dist/cli.js"
   },
   "main": "dist/index.js",
@@ -34,11 +35,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Thiendekaco/agent-forge.git"
+    "url": "git+https://github.com/Thiendekaco/agentcrew.git"
   },
-  "homepage": "https://github.com/Thiendekaco/agent-forge#readme",
+  "homepage": "https://github.com/Thiendekaco/agentcrew#readme",
   "bugs": {
-    "url": "https://github.com/Thiendekaco/agent-forge/issues"
+    "url": "https://github.com/Thiendekaco/agentcrew/issues"
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",

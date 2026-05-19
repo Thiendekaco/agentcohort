@@ -39,7 +39,7 @@ export function createInteractiveResolver(
     const defaultChoice: Choice = ctx.kind === 'claude-section' ? 'skip' : 'backup';
     const what =
       ctx.kind === 'claude-section'
-        ? `CLAUDE.md already has an "Agent Force Routing Rules" section that differs`
+        ? `CLAUDE.md already has an "Agentcrew Routing Rules" section that differs`
         : `${ctx.targetRelPath} already exists and differs`;
     const defLabel = defaultChoice === 'skip' ? 's' : 'b';
     const question =

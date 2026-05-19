@@ -50,7 +50,7 @@ describe('upsertSection - append', () => {
       result.indexOf(SECTION_TITLE)
     );
     // separated by a blank line, not glued onto user text
-    expect(result).toMatch(/My own notes\.\n\n# Agent Force Routing Rules/);
+    expect(result).toMatch(/My own notes\.\n\n# Agentcrew Routing Rules/);
   });
 
   it('on empty input produces just the section', () => {
@@ -84,7 +84,7 @@ describe('upsertSection - replace', () => {
     expect(result).toContain('Rule A');
     expect(result).not.toContain('OLD RULE');
     // exactly one occurrence of the heading (no duplication)
-    expect(result.match(/# Agent Force Routing Rules/g)?.length).toBe(1);
+    expect(result.match(/# Agentcrew Routing Rules/g)?.length).toBe(1);
     // following heading still present and separated
     expect(result).toMatch(/Rule B\n\n# After Section/);
   });

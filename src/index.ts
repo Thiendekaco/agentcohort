@@ -1,7 +1,7 @@
 /**
  * Programmatic API.
  *
- * `agent-force` is primarily a CLI, but the core install logic is exported
+ * `agentcrew` is primarily a CLI, but the core install logic is exported
  * so it can be embedded in other tooling and exercised directly by tests.
  */
 export { runInit } from './installer';

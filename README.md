@@ -1,10 +1,10 @@
-# agent-force
+# agentcrew
 
 > Install a principal/staff-level **AI software-engineering organization** for
 > [Claude Code](https://docs.claude.com/en/docs/claude-code) into any project
 > with one command.
 
-`agent-force` is not just a template copier. It installs a coordinated set of
+`agentcrew` is not just a template copier. It installs a coordinated set of
 **15 subagents**, **7 workflow commands**, and **routing rules** that make
 Claude Code work like a disciplined engineering org: explore before changing,
 prove root cause before fixing, measure before optimizing, and review before
@@ -15,24 +15,24 @@ shipping.
 ## Install
 
 ```bash
-npm i @thiendekaco/agent-force
+npm i agentcrew
 ```
 
 Or run it without installing:
 
 ```bash
-npx @thiendekaco/agent-force init
+npx agentcrew init
 ```
 
-> The npm package is `@thiendekaco/agent-force`; the CLI command it installs is
-> just `agent-force`.
+> The npm package is `agentcrew`; the CLI command it installs is
+> just `agentcrew`.
 
 ## Quick start
 
 From the root of the project you want to equip:
 
 ```bash
-agent-force init
+agentcrew init
 ```
 
 Then open Claude Code in that project and run:
@@ -47,15 +47,15 @@ Then open Claude Code in that project and run:
 
 | Command | What it does |
 |---|---|
-| `agent-force init` | Install agents, commands and routing rules into the current project. |
-| `agent-force init --yes` | Non-interactive. Safe defaults (see below). |
-| `agent-force init --dry-run` | Print exactly what *would* change. Writes nothing. |
-| `agent-force init --force` | Overwrite conflicts / replace the routing section without prompting. |
-| `agent-force init --backup` | Always back up a file before overwriting it. |
-| `agent-force --version` | Print the version. |
-| `agent-force --help` | Show help. |
+| `agentcrew init` | Install agents, commands and routing rules into the current project. |
+| `agentcrew init --yes` | Non-interactive. Safe defaults (see below). |
+| `agentcrew init --dry-run` | Print exactly what *would* change. Writes nothing. |
+| `agentcrew init --force` | Overwrite conflicts / replace the routing section without prompting. |
+| `agentcrew init --backup` | Always back up a file before overwriting it. |
+| `agentcrew --version` | Print the version. |
+| `agentcrew --help` | Show help. |
 
-Flags compose: `agent-force init --yes --backup`, `--force --backup`, etc.
+Flags compose: `agentcrew init --yes --backup`, `--force --backup`, etc.
 
 ## What files are created
 
@@ -71,7 +71,7 @@ Flags compose: `agent-force init --yes --backup`, `--force --backup`, etc.
   commands/
     auto-flow.md   dev-flow.md   bug-audit.md   bug-fix-approved.md
     perf-hunt.md   review-diff.md   fix-blockers.md
-CLAUDE.md                          # a "# Agent Force Routing Rules" section
+CLAUDE.md                          # a "# Agentcrew Routing Rules" section
 ```
 
 A full example tree is in [`examples/generated-claude/`](./examples/generated-claude).
@@ -119,15 +119,15 @@ The installed files are plain Markdown and **yours to edit**:
   `model:`/`tools:` frontmatter).
 - Adjust a pipeline in `.claude/commands/*.md`.
 - Put **your own** project notes in `CLAUDE.md` *outside* the
-  `# Agent Force Routing Rules` section — that section is owned by the tool and
+  `# Agentcrew Routing Rules` section — that section is owned by the tool and
   may be updated by a future `init`; everything else is never touched.
 
-Re-running `agent-force init` later will detect your edits as conflicts and ask
+Re-running `agentcrew init` later will detect your edits as conflicts and ask
 before changing them (or back them up with `--backup`).
 
 ## Safety notes
 
-`agent-force` is conservative by design:
+`agentcrew` is conservative by design:
 
 - **Never deletes** your files.
 - **Never silently overwrites.** Existing, differing files trigger a prompt
@@ -163,7 +163,7 @@ gets published.** Every push to `main` runs the
 
 1. installs, builds and runs the full test suite;
 2. publishes the **current** `package.json` version to npm —
-   https://www.npmjs.com/package/@thiendekaco/agent-force (so the very first
+   https://www.npmjs.com/package/agentcrew (so the very first
    release is exactly `0.1.0`, nothing skipped);
 3. creates the annotated git tag `vX.Y.Z` on the published commit;
 4. bumps to the next dev version (`patch` by default) and pushes a
