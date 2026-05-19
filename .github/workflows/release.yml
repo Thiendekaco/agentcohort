@@ -90,7 +90,13 @@ jobs:
 
       - name: Tag the published version
         if: steps.published.outputs.exists == 'false'
-        run: git tag -a "v${{ steps.ver.outputs.version }}" -m "v${{ steps.ver.outputs.version }}"
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally — skipping."
+          else
+            git tag -a "$TAG" -m "$TAG"
+          fi
 
       - name: Bump to next dev version
         if: steps.published.outputs.exists == 'false'
