@@ -15,7 +15,7 @@ export function getTemplatesDir(): string {
   const local = join(__dirname, 'templates');
   if (existsSync(local)) return local;
   throw new Error(
-    `agentcrew: templates directory not found next to ${__dirname}. ` +
+    `agentcohort: templates directory not found next to ${__dirname}. ` +
       `The package may be corrupted; try reinstalling.`
   );
 }
@@ -30,11 +30,11 @@ export function getVersion(): string {
     try {
       if (!existsSync(c)) continue;
       const pkg = JSON.parse(readFileSync(c, 'utf8')) as { name?: string; version?: string };
-      // Scope-resilient: matches "agentcrew" and "@scope/agentcrew".
+      // Scope-resilient: matches "agentcohort" and "@scope/agentcohort".
       if (
         typeof pkg.version === 'string' &&
         typeof pkg.name === 'string' &&
-        pkg.name.replace(/^@[^/]+\//, '') === 'agentcrew'
+        pkg.name.replace(/^@[^/]+\//, '') === 'agentcohort'
       ) {
         return pkg.version;
       }

@@ -69,9 +69,9 @@ jobs:
       - name: Check if already published
         id: published
         run: |
-          if npm view "agentcrew@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
+          if npm view "agentcohort@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "agentcrew@${{ steps.ver.outputs.version }} is already on npm — will skip publish."
+            echo "agentcohort@${{ steps.ver.outputs.version }} is already on npm — will skip publish."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi

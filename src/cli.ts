@@ -26,7 +26,7 @@ function printSummary(result: InitResult): void {
   ].filter((x): x is string => x !== null);
 
   process.stdout.write('\n');
-  const head = result.dryRun ? 'Dry run complete' : 'Agentcrew installed';
+  const head = result.dryRun ? 'Dry run complete' : 'Agentcohort installed';
   process.stdout.write(`${paint(head, 'bold', 'green')}  ${segments.join(' · ')}\n`);
   if (backups > 0) {
     process.stdout.write(
@@ -81,7 +81,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   let resolverHandle: ReturnType<typeof createInteractiveResolver> | null = null;
 
   process.stdout.write(
-    paint('\nagentcrew', 'bold', 'cyan') + paint(`  v${getVersion()}\n`, 'gray')
+    paint('\nagentcohort', 'bold', 'cyan') + paint(`  v${getVersion()}\n`, 'gray')
   );
   if (args.dryRun) {
     logger.info('Dry run — no files will be written.');

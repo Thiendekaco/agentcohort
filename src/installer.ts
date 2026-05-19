@@ -78,7 +78,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   const manifest = buildManifest(templatesDir, projectRoot);
 
   if (manifest.length === 0) {
-    throw new Error('agentcrew: no templates found to install.');
+    throw new Error('agentcohort: no templates found to install.');
   }
 
   const actions: ActionRecord[] = [];
@@ -103,7 +103,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     }
     // 3. Interactive: ask (honoring a prior "apply to all" decision).
     if (!options.resolver) {
-      throw new Error('agentcrew: interactive mode requires a resolver.');
+      throw new Error('agentcohort: interactive mode requires a resolver.');
     }
     const decision = sticky ?? (await options.resolver({ targetRelPath, kind }));
     if (decision.applyToAll && !sticky) sticky = decision;
@@ -127,10 +127,10 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
         log.success(`${tag}update  ${a.targetRelPath}${bk}`);
         break;
       case 'appended-section':
-        log.success(`${tag}append  ${a.targetRelPath} (Agentcrew Routing Rules)`);
+        log.success(`${tag}append  ${a.targetRelPath} (Agentcohort Routing Rules)`);
         break;
       case 'replaced-section':
-        log.success(`${tag}update  ${a.targetRelPath} (Agentcrew Routing Rules)${bk}`);
+        log.success(`${tag}update  ${a.targetRelPath} (Agentcohort Routing Rules)${bk}`);
         break;
       case 'unchanged':
         log.info(`${tag}unchanged  ${a.targetRelPath}`);

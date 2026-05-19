@@ -1,10 +1,10 @@
-# agentcrew
+# agentcohort
 
 > Install a principal/staff-level **AI software-engineering organization** for
 > [Claude Code](https://docs.claude.com/en/docs/claude-code) into any project
 > with one command.
 
-`agentcrew` is not just a template copier. It installs a coordinated set of
+`agentcohort` is not just a template copier. It installs a coordinated set of
 **15 subagents**, **7 workflow commands**, and **routing rules** that make
 Claude Code work like a disciplined engineering org: explore before changing,
 prove root cause before fixing, measure before optimizing, and review before
@@ -15,24 +15,24 @@ shipping.
 ## Install
 
 ```bash
-npm i agentcrew
+npm i agentcohort
 ```
 
 Or run it without installing:
 
 ```bash
-npx agentcrew init
+npx agentcohort init
 ```
 
-> The npm package is `agentcrew`; the CLI command it installs is
-> just `agentcrew`.
+> The npm package is `agentcohort`; the CLI command it installs is
+> just `agentcohort`.
 
 ## Quick start
 
 From the root of the project you want to equip:
 
 ```bash
-agentcrew init
+agentcohort init
 ```
 
 Then open Claude Code in that project and run:
@@ -47,15 +47,15 @@ Then open Claude Code in that project and run:
 
 | Command | What it does |
 |---|---|
-| `agentcrew init` | Install agents, commands and routing rules into the current project. |
-| `agentcrew init --yes` | Non-interactive. Safe defaults (see below). |
-| `agentcrew init --dry-run` | Print exactly what *would* change. Writes nothing. |
-| `agentcrew init --force` | Overwrite conflicts / replace the routing section without prompting. |
-| `agentcrew init --backup` | Always back up a file before overwriting it. |
-| `agentcrew --version` | Print the version. |
-| `agentcrew --help` | Show help. |
+| `agentcohort init` | Install agents, commands and routing rules into the current project. |
+| `agentcohort init --yes` | Non-interactive. Safe defaults (see below). |
+| `agentcohort init --dry-run` | Print exactly what *would* change. Writes nothing. |
+| `agentcohort init --force` | Overwrite conflicts / replace the routing section without prompting. |
+| `agentcohort init --backup` | Always back up a file before overwriting it. |
+| `agentcohort --version` | Print the version. |
+| `agentcohort --help` | Show help. |
 
-Flags compose: `agentcrew init --yes --backup`, `--force --backup`, etc.
+Flags compose: `agentcohort init --yes --backup`, `--force --backup`, etc.
 
 ## What files are created
 
@@ -71,7 +71,7 @@ Flags compose: `agentcrew init --yes --backup`, `--force --backup`, etc.
   commands/
     auto-flow.md   dev-flow.md   bug-audit.md   bug-fix-approved.md
     perf-hunt.md   review-diff.md   fix-blockers.md
-CLAUDE.md                          # a "# Agentcrew Routing Rules" section
+CLAUDE.md                          # a "# Agentcohort Routing Rules" section
 ```
 
 A full example tree is in [`examples/generated-claude/`](./examples/generated-claude).
@@ -119,15 +119,15 @@ The installed files are plain Markdown and **yours to edit**:
   `model:`/`tools:` frontmatter).
 - Adjust a pipeline in `.claude/commands/*.md`.
 - Put **your own** project notes in `CLAUDE.md` *outside* the
-  `# Agentcrew Routing Rules` section — that section is owned by the tool and
+  `# Agentcohort Routing Rules` section — that section is owned by the tool and
   may be updated by a future `init`; everything else is never touched.
 
-Re-running `agentcrew init` later will detect your edits as conflicts and ask
+Re-running `agentcohort init` later will detect your edits as conflicts and ask
 before changing them (or back them up with `--backup`).
 
 ## Safety notes
 
-`agentcrew` is conservative by design:
+`agentcohort` is conservative by design:
 
 - **Never deletes** your files.
 - **Never silently overwrites.** Existing, differing files trigger a prompt
@@ -163,7 +163,7 @@ gets published.** Every push to `main` runs the
 
 1. installs, builds and runs the full test suite;
 2. publishes the **current** `package.json` version to npm —
-   https://www.npmjs.com/package/agentcrew (so the very first
+   https://www.npmjs.com/package/agentcohort (so the very first
    release is exactly `0.1.0`, nothing skipped);
 3. creates the annotated git tag `vX.Y.Z` on the published commit;
 4. bumps to the next dev version (`patch` by default) and pushes a

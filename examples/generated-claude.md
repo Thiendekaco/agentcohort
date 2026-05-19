@@ -1,6 +1,6 @@
-# Example: what `agentcrew init` generates
+# Example: what `agentcohort init` generates
 
-Running `agentcrew init` in a project produces exactly this structure
+Running `agentcohort init` in a project produces exactly this structure
 (content is shipped verbatim from [`src/templates/`](../src/templates), which
 is the single source of truth — this file intentionally does not duplicate it
 to avoid drift):
@@ -8,7 +8,7 @@ to avoid drift):
 ```
 <your-project>/
 ├── CLAUDE.md
-│     └── # Agentcrew Routing Rules     <- appended/managed section only
+│     └── # Agentcohort Routing Rules     <- appended/managed section only
 │                                            (your other CLAUDE.md content is
 │                                             never touched)
 └── .claude/
@@ -60,5 +60,5 @@ model: <haiku | sonnet | opus>
 To preview without writing anything:
 
 ```bash
-agentcrew init --dry-run
+agentcohort init --dry-run
 ```

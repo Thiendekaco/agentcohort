@@ -55,10 +55,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 export function helpText(): string {
   const b = (s: string) => paint(s, 'bold');
   return `
-${b('agentcrew')} — install a principal/staff-level Claude Code AI engineering org.
+${b('agentcohort')} — install a principal/staff-level Claude Code AI engineering org.
 
 ${b('USAGE')}
-  agentcrew <command> [options]
+  agentcohort <command> [options]
 
 ${b('COMMANDS')}
   init                 Install agents, workflow commands and routing rules
@@ -81,7 +81,7 @@ ${b('WHAT GETS INSTALLED')}
   .claude/agents/      15 subagents (scout, architect, planner, implementer,
                        reviewer, bug-hunter, root-cause-analyst, ...).
   .claude/commands/    7 workflow commands.
-  CLAUDE.md            Appends a "# Agentcrew Routing Rules" section.
+  CLAUDE.md            Appends a "# Agentcohort Routing Rules" section.
 
 ${b('WORKFLOW COMMANDS (run inside Claude Code)')}
   /auto-flow           Classify the task and pick the right workflow.

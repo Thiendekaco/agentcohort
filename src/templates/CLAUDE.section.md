@@ -1,7 +1,7 @@
-# Agentcrew Routing Rules
+# Agentcohort Routing Rules
 
-> Installed and managed by [`agentcrew`](https://www.npmjs.com/package/agentcrew).
-> This section is owned by the tool: re-running `agentcrew init` may update
+> Installed and managed by [`agentcohort`](https://www.npmjs.com/package/agentcohort).
+> This section is owned by the tool: re-running `agentcohort init` may update
 > it. Put your own project notes **outside** this section so they are never
 > touched.
 

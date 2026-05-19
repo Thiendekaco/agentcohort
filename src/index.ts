@@ -1,7 +1,7 @@
 /**
  * Programmatic API.
  *
- * `agentcrew` is primarily a CLI, but the core install logic is exported
+ * `agentcohort` is primarily a CLI, but the core install logic is exported
  * so it can be embedded in other tooling and exercised directly by tests.
  */
 export { runInit } from './installer';

@@ -1,5 +1,5 @@
 {
-  "name": "agentcrew",
+  "name": "agentcohort",
   "version": "0.1.0",
   "description": "Install a principal/staff-level Claude Code AI software engineering organization (agents + workflows + routing rules) into any project with one command.",
   "keywords": [
@@ -15,10 +15,10 @@
     "bug-audit"
   ],
   "license": "MIT",
-  "author": "agentcrew",
+  "author": "agentcohort",
   "type": "commonjs",
   "bin": {
-    "agentcrew": "dist/cli.js",
+    "agentcohort": "dist/cli.js",
     "agent-force": "dist/cli.js"
   },
   "main": "dist/index.js",
@@ -35,11 +35,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Thiendekaco/agentcrew.git"
+    "url": "git+https://github.com/Thiendekaco/agentcohort.git"
   },
-  "homepage": "https://github.com/Thiendekaco/agentcrew#readme",
+  "homepage": "https://github.com/Thiendekaco/agentcohort#readme",
   "bugs": {
-    "url": "https://github.com/Thiendekaco/agentcrew/issues"
+    "url": "https://github.com/Thiendekaco/agentcohort/issues"
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
