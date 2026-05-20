@@ -47,8 +47,8 @@ export function validateConfig(raw: unknown): AgentcohortConfig {
     if (typeof v !== 'string') {
       fail(`models.${tier} must be a string`);
     }
-    if (v.length === 0) {
-      fail(`models.${tier} must be non-empty`);
+    if (v.trim().length === 0) {
+      fail(`models.${tier} must be a non-empty, non-whitespace string`);
     }
     out[tier] = v;
   }

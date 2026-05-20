@@ -60,6 +60,12 @@ describe('validateConfig', () => {
     ).toThrow(/premium/);
   });
 
+  it('rejects whitespace-only string value', () => {
+    expect(() =>
+      validateConfig({ version: 1, models: { ...VALID.models, mid: '   ' } })
+    ).toThrow(/mid/);
+  });
+
   it('rejects non-string value', () => {
     expect(() =>
       validateConfig({ version: 1, models: { ...VALID.models, cheap: 5 } })
