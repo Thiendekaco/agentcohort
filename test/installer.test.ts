@@ -87,6 +87,48 @@ describe('runInit - fresh project', () => {
     expect(i).toBeLessThan(j);
   });
 
+  it('installs the OpenWolf interop section with the read matrix', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const claude = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
+    // Section header + the three .wolf files agents care about + the
+    // license disclaimer that protects agentcohort's MIT status.
+    expect(claude).toContain('## OpenWolf interop');
+    expect(claude).toContain('`anatomy.md`');
+    expect(claude).toContain('`cerebrum.md`');
+    expect(claude).toContain('`buglog.json`');
+    expect(claude).toContain('MIT');
+    expect(claude).toContain('AGPL-3.0');
+    // The section must sit BEFORE the default-behavior / operating-standard
+    // sections so precedence rules are clear when agents read top-down.
+    const interop = claude.indexOf('## OpenWolf interop');
+    const defaults = claude.indexOf('## Default behavior');
+    const operating = claude.indexOf('## Operating standard');
+    expect(interop).toBeGreaterThan(-1);
+    expect(interop).toBeLessThan(defaults);
+    expect(defaults).toBeLessThan(operating);
+  });
+
+  it('every agent boot directive mentions OpenWolf so .wolf/ is checked', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const agentDir = join(cwd, '.claude', 'agents');
+    const files = readdirSync(agentDir).filter((f) => f.endsWith('.md'));
+    expect(files.length).toBe(16);
+    for (const f of files) {
+      const text = readFileSync(join(agentDir, f), 'utf8');
+      const start = text.indexOf('<!-- boot-directive-start -->');
+      const end = text.indexOf('<!-- boot-directive-end -->');
+      const directive = text.slice(start, end);
+      expect(directive, `${f}: boot directive must reference .wolf/`).toContain(
+        '.wolf/'
+      );
+      expect(directive, `${f}: must not write to .wolf/`).toContain(
+        'Do NOT modify `.wolf/` directly'
+      );
+    }
+  });
+
   it('installs the delimited boot directive at the top of every agent', async () => {
     const cwd = project();
     await runInit(baseOpts(cwd));
