@@ -47,16 +47,19 @@ function baseOpts(cwd: string, over: Partial<InitOptions> = {}): InitOptions {
 }
 
 describe('runInit - fresh project', () => {
-  it('creates all 15 agents, 7 commands and CLAUDE.md', async () => {
+  it('creates all 16 agents, 9 commands and CLAUDE.md', async () => {
     const cwd = project();
     const result = await runInit(baseOpts(cwd));
 
     const agents = readdirSync(join(cwd, '.claude', 'agents'));
     const commands = readdirSync(join(cwd, '.claude', 'commands'));
-    expect(agents.length).toBe(15);
-    expect(commands.length).toBe(7);
+    expect(agents.length).toBe(16);
+    expect(commands.length).toBe(9);
     expect(agents).toContain('repo-scout.md');
+    expect(agents).toContain('dispatcher.md');
     expect(commands).toContain('auto-flow.md');
+    expect(commands).toContain('quick-fix.md');
+    expect(commands).toContain('quick-feature.md');
 
     const claude = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('# Agentcohort Routing Rules');
@@ -89,7 +92,7 @@ describe('runInit - fresh project', () => {
     await runInit(baseOpts(cwd));
     const agentDir = join(cwd, '.claude', 'agents');
     const files = readdirSync(agentDir).filter((f) => f.endsWith('.md'));
-    expect(files.length).toBe(15);
+    expect(files.length).toBe(16);
     for (const f of files) {
       const text = readFileSync(join(agentDir, f), 'utf8');
       const start = text.indexOf('<!-- boot-directive-start -->');
