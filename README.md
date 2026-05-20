@@ -93,6 +93,20 @@ production-grade correctness, no shallow fixes, no fixing without evidence, and
 **a bug audit never fixes** — it produces a recommendation and stops at a human
 approval gate.
 
+### How agents respect your CLAUDE.md and skills
+
+Every installed agent boots by reading your project's `CLAUDE.md`
+content **outside** the `# Agentcohort Routing Rules` section and by
+checking for installed skills that match the current task. The rules:
+
+- Your project rules take precedence over an agent's default prompt.
+- An agent invokes a matching skill instead of re-implementing it.
+- Agentcohort's defaults apply only where your project is silent.
+
+This means `agentcohort` slots into a project that already has its own
+CLAUDE.md and skills (e.g. `superpowers`) — it does not override what
+you've already set up.
+
 ## Using the workflow commands (inside Claude Code)
 
 | Command | Pipeline | Use it for |
@@ -112,6 +126,58 @@ approval gate.
 - **Haiku** — cheap exploration / scouting.
 - **Sonnet** — implementation, testing, bug & performance hunting.
 - **Opus** — architecture, root-cause analysis, expert council, final review.
+
+## Customizing model strategy
+
+`agentcohort init` will (interactively) prompt you to either use the
+default Claude model IDs or pick your own for each tier. Your choice is
+saved to `.agentcohort.json` at the project root and reused on later
+runs.
+
+To revisit your choice without re-installing everything, run:
+
+```bash
+agentcohort config
+```
+
+This re-prompts for the three tier model IDs, shows a diff of which
+installed agents would change, and applies the changes with your
+confirmation.
+
+To force a re-prompt during install (instead of using the existing
+`.agentcohort.json`), run:
+
+```bash
+agentcohort init --reconfigure
+```
+
+### `.agentcohort.json` schema (v1)
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Thiendekaco/agentcohort/main/schema/agentcohort-config-v1.json",
+  "version": 1,
+  "models": {
+    "premium": "claude-opus-4-7",
+    "mid": "claude-sonnet-4-6",
+    "cheap": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+- **premium** — architecture, root-cause analysis, expert council, final
+  review.
+- **mid** — implementation, testing, bug & performance hunting.
+- **cheap** — fast read-only repo scout.
+
+Hand-editing one of the installed `.claude/agents/*.md` files to use a
+specific model ID is respected: subsequent `agentcohort init` and
+`agentcohort config` runs leave that hand-edit alone (the tool only
+rewrites lines that are still tier aliases or match the previous
+config's IDs).
+
+Model IDs are not validated by the tool — if the ID is invalid, Claude
+Code will fail at agent spawn time.
 
 ## Customizing agents
 
@@ -146,7 +212,8 @@ before changing them (or back them up with `--backup`).
 - **`--dry-run`** performs zero writes and zero backups.
 - Backups are written next to the original as
   `&lt;file&gt;.backup-YYYYMMDD-HHMMSS` and never overwrite an existing backup.
-- Cross-platform (Windows/macOS/Linux), zero runtime dependencies, no
+- Cross-platform (Windows/macOS/Linux); a single runtime dependency
+  (`@inquirer/prompts` for the interactive model-tier prompt), no
   shell-specific behavior.
 
 ## Development
@@ -157,27 +224,36 @@ npm run build      # tsc -> dist/, then copies templates
 npm test           # vitest
 ```
 
-## Releases
+## Branching & releases
 
-Publishing is automated. **The version in `package.json` is the version that
-gets published.** Every push to `main` runs the
-[`Release`](.github/workflows/release.yml) workflow, which:
+Two long-lived branches:
+
+- **`dev`** — integration / staging. All feature PRs target `dev`. Nothing
+  here publishes to npm; this is the place to bundle PRs together, run
+  manual smoke tests, and verify the release as a whole.
+- **`main`** — production. Only ever updated by merging `dev` → `main`.
+  Every push to `main` triggers the [`Release`](.github/workflows/release.yml)
+  workflow.
+
+The workflow does:
 
 1. installs, builds and runs the full test suite;
 2. publishes the **current** `package.json` version to npm —
    https://www.npmjs.com/package/agentcohort (so the very first
-   release is exactly `0.1.0`, nothing skipped);
+   release was exactly `0.1.0`, nothing skipped);
 3. creates the annotated git tag `vX.Y.Z` on the published commit;
 4. bumps to the next dev version (`patch` by default) and pushes a
    `chore(release): published vX.Y.Z, open vX.Y.(Z+1) [skip ci]` commit back
    to `main`.
 
-So: to cut a normal release, just push to `main`. To release a `minor`/`major`
-instead, bump `package.json` yourself in a regular commit before pushing (or
-use the *Run workflow* button to control how the **next** pending version is
-opened). If the pending version is already on npm, publish is skipped and the
-job still succeeds (safe re-runs). The `[skip ci]` marker stops the release
-commit from re-triggering the workflow (no publish loop).
+So the normal release cycle is: open PR → `dev` → review & merge → smoke
+test on `dev` → open PR `dev` → `main` → merge → workflow publishes. To
+ship a `minor`/`major` instead of `patch`, bump `package.json` yourself
+in the PR before merging (or use the *Run workflow* button to control
+how the **next** pending version is opened). If the pending version is
+already on npm, publish is skipped and the job still succeeds (safe
+re-runs). The `[skip ci]` marker stops the release commit from
+re-triggering the workflow (no publish loop).
 
 **One-time setup:** add an npm **Automation** access token as the repository
 secret `NPM_TOKEN` (GitHub → Settings → Secrets and variables → Actions →

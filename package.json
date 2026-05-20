@@ -1,6 +1,6 @@
 {
   "name": "agentcohort",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Install a principal/staff-level Claude Code AI software engineering organization (agents + workflows + routing rules) into any project with one command.",
   "keywords": [
     "claude",
@@ -43,7 +43,8 @@
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json && node scripts/copy-templates.mjs",
+    "sync-boot": "node scripts/sync-boot-directive.mjs",
+    "build": "npm run clean && npm run sync-boot && tsc -p tsconfig.json && node scripts/copy-templates.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build && npm test"
@@ -52,5 +53,8 @@
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.10.1"
   }
 }

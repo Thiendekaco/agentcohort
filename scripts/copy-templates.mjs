@@ -15,5 +15,10 @@ if (!existsSync(src)) {
   process.exit(1);
 }
 
-cpSync(src, dest, { recursive: true });
+// Skip _boot-directive.md — it is a build-time source for the sync script
+// and is never read at runtime by the installed package.
+cpSync(src, dest, {
+  recursive: true,
+  filter: (s) => !s.endsWith('_boot-directive.md'),
+});
 console.log(`[copy-templates] copied templates -> ${dest}`);
