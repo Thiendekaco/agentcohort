@@ -8,6 +8,25 @@
 This project runs as an **AI software-engineering organization**. Default to
 routing work through the workflow commands instead of ad-hoc editing.
 
+## Interoperability & precedence
+
+These rules govern how the installed agents interact with the rest of
+your project's setup. They apply to every agent and every workflow.
+
+- **Your project rules win.** Anything you write in this CLAUDE.md
+  *outside* this `# Agentcohort Routing Rules` section takes precedence
+  over an installed agent's prompt. On conflict, agents follow your
+  rules.
+- **Installed skills must be invoked when they match.** If you have a
+  skill (e.g. `superpowers:*`, `gstack`, etc.) that fits the current
+  task, the agent invokes it instead of re-implementing the same logic.
+- **Agent prompts are a baseline, not ground truth.** When your
+  CLAUDE.md specifies a tool, framework, commit style, or workflow, the
+  agent uses your choice — not the default in its prompt.
+- **Pipeline commands remain the default routing.** `/dev-flow`,
+  `/bug-audit`, and the others are the default. A user-defined flow in
+  your CLAUDE.md takes precedence when present.
+
 ## Operating standard (all agents)
 
 - Operate at **top 1% principal/staff software-engineer** level.
