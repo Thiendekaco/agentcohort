@@ -4,8 +4,9 @@ import { ExitPromptError } from '@inquirer/core';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
 import { promptModelStrategy } from './promptModels';
+import { promptGates } from './promptGates';
 import { runConfigCmd } from './configCmd';
-import { loadConfig, writeConfig, resolveModels } from './config';
+import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getVersion } from './paths';
 import { parseArgs, helpText } from './args';
@@ -119,13 +120,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const result = await runConfigCmd({
         cwd,
         promptModelStrategy,
+        promptGates,
         confirm: (message) => confirm({ message, default: true }),
       });
+      const appliedDetail = result.changes.length > 0
+        ? `${result.changes.length} agent file${result.changes.length === 1 ? '' : 's'}` +
+          (result.gatesChanged ? ' + gates' : '')
+        : 'gates';
       const msg = {
         'no-changes': 'No changes. Configuration is up to date.',
         'no-agents': 'Config saved. No installed agents found — run `agentcohort init` to install.',
         'cancelled': 'Cancelled. No changes made.',
-        'applied': `Applied ${result.changes.length} change(s) to installed agents.`,
+        'applied': `Applied changes (${appliedDetail}).`,
       }[result.status];
       process.stdout.write(`${paint('•', 'cyan')} ${msg}\n`);
       return 0;
@@ -137,8 +143,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
     if (interactive && (existingConfig === null || args.reconfigure)) {
       const newModels = await promptModelStrategy(existingConfig?.models);
+      const newGates = await promptGates(resolveGates(existingConfig));
       // Persist config BEFORE install so a partial install can be re-run idempotently.
-      writeConfig(cwd, { version: 1, models: newModels });
+      // Drop the gates field when nothing was set and user accepted defaults — matches
+      // the runConfigCmd policy (explicit > implicit).
+      const preInstallConfig =
+        existingConfig?.gates !== undefined ||
+        newGates.architect !== 'on' ||
+        newGates.plan !== 'on' ||
+        newGates.bottleneck !== 'auto' ||
+        newGates['root-cause'] !== 'on' ||
+        newGates['expert-council'] !== 'on'
+          ? { version: 1 as const, models: newModels, gates: newGates }
+          : { version: 1 as const, models: newModels };
+      writeConfig(cwd, preInstallConfig);
       models = newModels;
     }
 

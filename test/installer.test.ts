@@ -87,6 +87,54 @@ describe('runInit - fresh project', () => {
     expect(i).toBeLessThan(j);
   });
 
+  it('installs the Human review gates section + commands carry the gate steps', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const claude = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
+    // CLAUDE.md section + each configurable gate is documented
+    expect(claude).toContain('## Human review gates');
+    expect(claude).toContain('`architect`');
+    expect(claude).toContain('`plan`');
+    expect(claude).toContain('`root-cause`');
+    expect(claude).toContain('`expert-council`');
+    // dev-flow.md contains gate steps for architect AND plan
+    const devFlow = readFileSync(
+      join(cwd, '.claude', 'commands', 'dev-flow.md'),
+      'utf8'
+    );
+    expect(devFlow).toContain('HUMAN GATE — architect');
+    expect(devFlow).toContain('HUMAN GATE — plan');
+    expect(devFlow).toContain('.agentcohort.json');
+    // bug-audit.md contains the root-cause gate
+    const bugAudit = readFileSync(
+      join(cwd, '.claude', 'commands', 'bug-audit.md'),
+      'utf8'
+    );
+    expect(bugAudit).toContain('HUMAN GATE — root-cause');
+    expect(bugAudit).toContain('HUMAN GATE — expert-council');
+    // perf-hunt.md contains BOTH the bottleneck and architect gates
+    const perfHunt = readFileSync(
+      join(cwd, '.claude', 'commands', 'perf-hunt.md'),
+      'utf8'
+    );
+    expect(perfHunt).toContain('HUMAN GATE — bottleneck');
+    expect(perfHunt).toContain('HUMAN GATE — architect');
+    // CLAUDE.md mentions bottleneck in the gate table
+    expect(claude).toContain('`bottleneck`');
+    // dispatcher.md exposes Approval gates field
+    const dispatcher = readFileSync(
+      join(cwd, '.claude', 'agents', 'dispatcher.md'),
+      'utf8'
+    );
+    expect(dispatcher).toContain('Approval gates:');
+    // auto-flow.md documents the per-task override syntax
+    const autoFlow = readFileSync(
+      join(cwd, '.claude', 'commands', 'auto-flow.md'),
+      'utf8'
+    );
+    expect(autoFlow).toContain('gates ±');
+  });
+
   it('installs the OpenWolf interop section with the read matrix', async () => {
     const cwd = project();
     await runInit(baseOpts(cwd));

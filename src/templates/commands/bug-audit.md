@@ -13,10 +13,22 @@ product code.** Its only deliverable is a decision-ready report.
 1. **bug-hunter** — sweep for confirmed and latent defects with evidence.
 2. **root-cause-analyst** — for the significant findings: symptom → direct
    cause → root cause → systemic cause; severity; impact; correction options.
-3. **reproduction-engineer** — make the primary bug deterministic; capture a
+3. **🚦 HUMAN GATE — root-cause**. Read `.agentcohort.json` for
+   `gates.root-cause` (default `on`). If `on`, OR `auto` AND Tier ≥ 4,
+   STOP and surface the root cause analysis for user confirmation BEFORE
+   building the reproduction. Wait for:
+   - `y` → continue to step 4.
+   - `revise <feedback>` → re-run root-cause-analyst with the feedback.
+   - `abort` → stop the pipeline.
+   If `off`, skip this gate and continue immediately.
+4. **reproduction-engineer** — make the primary bug deterministic; capture a
    failing test/script (test scaffolding only — no product-code changes).
-4. **expert-council** — review the diagnosis; produce solution options with
+5. **expert-council** — review the diagnosis; produce solution options with
    trade-offs; recommend one; define the human approval being requested.
+6. **🚦 HUMAN GATE — expert-council** (always, non-negotiable). This is
+   the existing bug-audit approval gate from v0.1.x. The flow ends here.
+   No code changes occur in `/bug-audit` regardless of any gate config —
+   only `/bug-fix-approved` invoked separately by the user can change code.
 
 ## Iron rules
 

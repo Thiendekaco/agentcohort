@@ -106,10 +106,40 @@ Skipping:       <agents intentionally skipped> (or "—" if none)
 Cost band:      <trivial | very low | low | medium | high>
 Reasoning:      <≤2 sentences: what about the task selected this tier>
 Escalation:     <matched keyword(s)>  (or "—" if none)
+Approval gates: <comma-separated mid-pipeline gates that will fire>
+                (or "—" if none)
 Next step:      <the exact slash command the orchestrator should run>
                 (or "answer inline" for Tier 0)
-Approval gate:  Awaiting user confirmation (y / escalate / abort).
+Approval gate:  Awaiting user confirmation
+                (y / escalate / abort / gates ±name).
 ```
+
+## Computing the `Approval gates:` field
+
+Read `.agentcohort.json` (if present) for the user's `gates`
+configuration. Defaults are applied for missing keys: `architect=on`,
+`plan=on`, `root-cause=on`, `expert-council=on`.
+
+For the **chosen pipeline**, list only the gates that are *applicable*
+AND *will fire*:
+
+| Pipeline | Applicable gates |
+|---|---|
+| Tier 0 / Tier 1 | — (no destructive work) |
+| `/quick-fix`, `/quick-feature` | — (Tier 2 explicitly skips architect/planner; reviewer is non-negotiable but not surfaced here) |
+| `/dev-flow` | `architect` (only if arch-sensitive), `plan` |
+| `/bug-audit` | `root-cause`, `expert-council` (always) |
+| `/bug-fix-approved` | — (entering this command IS the user gate) |
+| `/perf-hunt` | `bottleneck`, `architect` (only if perf-arch-sensitive) |
+| `/review-diff` | — |
+| `/fix-blockers` | — |
+
+A gate "will fire" iff its config is `on`, or its config is `auto`
+AND the task is Tier 4 / has an escalation keyword. List only those.
+
+The user may override per-task at the `Approval gate:` reply line by
+typing `gates +<name>` to force a gate on, or `gates -<name>` to skip
+one — apply these in the next pipeline invocation.
 
 # Anti-patterns (do not do)
 

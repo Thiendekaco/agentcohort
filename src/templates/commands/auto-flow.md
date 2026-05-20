@@ -26,7 +26,7 @@ Print the dispatcher's plan to the user verbatim, plus a single
 question line:
 
 ```
-Proceed with this plan?  [y / escalate / abort / question]
+Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
 ```
 
 - `y` → run the next step exactly as planned.
@@ -36,6 +36,10 @@ Proceed with this plan?  [y / escalate / abort / question]
 - `abort` → stop. Do nothing else.
 - `question` → answer the user's question; do not execute the plan
   until you re-confirm.
+- `gates +architect`, `gates -plan`, etc. → override a single gate
+  for THIS task only (does not modify `.agentcohort.json`). Re-print
+  the plan with the new `Approval gates:` line, then re-ask for `y`.
+  Valid gate names: `architect`, `plan`, `root-cause`, `expert-council`.
 
 ## Step 3 — Execute the chosen next step
 

@@ -59,6 +59,63 @@ sensitive work spends *more* (on purpose).
 > actual numbers. The dispatcher itself costs about one haiku call
 > (~$0.005) per request, included in the "with agentcohort" column.
 
+### Human review gates (configurable)
+
+Some pipeline stages produce **load-bearing decisions** — an
+architecture choice, a root-cause verdict, a plan that locks in the
+implementation surface. agentcohort can pause the pipeline at these
+points so you sanity-check the decision before more expensive
+stages run.
+
+**Gate matrix:**
+
+| Gate | Position | Default | What you confirm |
+|---|---|---|---|
+| `architect` | after `solution-architect` (in `/dev-flow`, `/perf-hunt`) | `on` | The chosen architecture + trade-offs |
+| `plan` | after `feature-planner` (in `/dev-flow`) | `on` | Exact files, tests, verification before code is written |
+| `bottleneck` | after `performance-hunter` (in `/perf-hunt`) | `auto` | The right bottleneck to attack before architect / optimizer cost is committed |
+| `root-cause` | after `root-cause-analyst` (in `/bug-audit`) | `on` | The root cause verdict before a reproduction is built |
+| `expert-council` | end of `/bug-audit` (always) | `on` | The recommended solution before `/bug-fix-approved` can run |
+
+**Modes per gate:** `on` (always pause), `off` (never), `auto`
+(pause only when the dispatcher escalates to Tier 4 / hits an
+escalation keyword).
+
+**Configure globally** by re-running `agentcohort config` (or
+hand-editing `.agentcohort.json`):
+
+```json
+{
+  "version": 1,
+  "models": { "premium": "...", "mid": "...", "cheap": "..." },
+  "gates": {
+    "architect": "on",
+    "plan": "auto",
+    "bottleneck": "auto",
+    "root-cause": "on",
+    "expert-council": "on"
+  }
+}
+```
+
+**Override per task** at the dispatcher's plan prompt:
+
+```
+Proceed with this plan? [y / escalate / abort / question / gates ±<name>]
+> gates -plan        # skip the plan gate for THIS task only
+> gates +architect   # force architect gate on for THIS task only
+```
+
+Per-task overrides do not persist to `.agentcohort.json`.
+
+**Why gates pay for themselves.** A wrong architecture decision
+cascades cost into planner → implementer → test → review. Catching
+it at the architect gate (when you've spent ~1 opus call) is far
+cheaper than catching it at the reviewer gate (when you've spent
+the whole pipeline + a wasted edit). Default-`on` is conservative;
+turn gates `off` if your task volume makes the friction worse than
+the rework.
+
 ### Stacks with a memory layer (optional)
 
 If your project also runs [**OpenWolf**](https://github.com/cytostack/openwolf)
