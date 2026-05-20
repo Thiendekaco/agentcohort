@@ -10,6 +10,7 @@ import {
 } from './config';
 import { GATE_NAMES } from './defaults';
 import { computeFrontmatterModelDiff, ModelChange } from './diff';
+import { stampTemplate } from './stamp';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 export type ConfigCmdStatus = 'no-changes' | 'no-agents' | 'cancelled' | 'applied';
@@ -104,7 +105,11 @@ export async function runConfigCmd(opts: ConfigCmdOptions): Promise<ConfigCmdRes
       /^model:[ \t]+\S+[ \t]*$/m,
       `model: ${c.to}`
     );
-    writeFileSync(path, rewritten, 'utf8');
+    // Re-stamp after rewriting the model line. contentHash ignores
+    // the model line, so the stamp value does not actually change —
+    // but stampTemplate also patches files that pre-date 0.4.0 and
+    // had no stamp at all.
+    writeFileSync(path, stampTemplate(rewritten), 'utf8');
   }
   return { status: 'applied', changes, gatesChanged };
 }

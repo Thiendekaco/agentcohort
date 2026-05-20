@@ -59,6 +59,44 @@ sensitive work spends *more* (on purpose).
 > actual numbers. The dispatcher itself costs about one haiku call
 > (~$0.005) per request, included in the "with agentcohort" column.
 
+### Health check — `agentcohort doctor`
+
+Verify the install in the current project is intact, the config is
+valid, and no installed file has drifted from the bundled template:
+
+```bash
+agentcohort doctor          # human-readable output, colored, exits 0/1
+agentcohort doctor --json   # same checks, JSON for CI
+```
+
+The command is **strictly read-only** — never creates, modifies, or
+deletes files. It reports:
+
+- **Project**: presence of `.claude/agents/`, `.claude/commands/`,
+  `CLAUDE.md`. `.agentcohort.json` is optional (defaults apply).
+- **Config**: JSON parseable, model tiers valid, gate values valid.
+  Unknown gate keys are surfaced as warnings, not errors (typo guard).
+- **Agents / Commands**: count installed vs. bundled; lists missing,
+  extra (user-added), `user-edited`, `outdated` (package upgraded but
+  file not refreshed), and `unstamped` (pre-0.4.0 install).
+- **CLAUDE.md**: routing section present (exactly once), required
+  subsections found.
+
+**How integrity tracking works** — at install time, every `.md`
+template gets a 16-char SHA-256 stamp in its frontmatter
+(`_agentcohort_hash`). The hash excludes the `model:` line so
+changing the model tier does not trigger a false `user-edited`
+report. `doctor` compares the stored stamp against the current file
+content and the current bundled template to classify each file.
+
+Exit codes are CI-friendly:
+
+| Code | Meaning |
+|---|---|
+| `0` | Healthy — no warnings, no errors |
+| `1` | Healthy with warnings, or unhealthy with errors |
+| `2` | Internal failure (filesystem error, etc.) |
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -200,6 +238,9 @@ runs.
 | `agentcohort init --dry-run` | Print exactly what *would* change. Writes nothing. |
 | `agentcohort init --force` | Overwrite conflicts / replace the routing section without prompting. |
 | `agentcohort init --backup` | Always back up a file before overwriting it. |
+| `agentcohort config` | Re-prompt model tiers + human review gates; show + apply diffs. |
+| `agentcohort doctor` | **Read-only** health check of the current project's install. Exits 0 healthy, 1 on warning/error, 2 on internal failure. |
+| `agentcohort doctor --json` | Same checks, machine-readable JSON output. |
 | `agentcohort --version` | Print the version. |
 | `agentcohort --help` | Show help. |
 

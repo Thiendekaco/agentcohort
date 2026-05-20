@@ -241,9 +241,29 @@ describe('runInit - fresh project', () => {
     await runInit(baseOpts(cwd));
     const tplPath = join(TEMPLATES, 'commands', 'auto-flow.md');
     const installedPath = join(cwd, '.claude', 'commands', 'auto-flow.md');
-    expect(readFileSync(installedPath, 'utf8')).toBe(
-      readFileSync(tplPath, 'utf8')
+    const tpl = readFileSync(tplPath, 'utf8');
+    const installed = readFileSync(installedPath, 'utf8');
+    // The installer now adds an integrity stamp (`_agentcohort_hash:`)
+    // to every installed template — strip it for the body comparison.
+    const installedStripped = installed.replace(
+      /^_agentcohort_hash:[ \t]+\S+[ \t]*\r?\n/m,
+      ''
     );
+    expect(installedStripped).toBe(tpl);
+  });
+
+  it('stamps every installed agent and command with _agentcohort_hash', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const agents = readdirSync(join(cwd, '.claude', 'agents'));
+    const commands = readdirSync(join(cwd, '.claude', 'commands'));
+    for (const f of [...agents, ...commands]) {
+      const group = agents.includes(f) ? 'agents' : 'commands';
+      const text = readFileSync(join(cwd, '.claude', group, f), 'utf8');
+      expect(text, `${group}/${f} missing _agentcohort_hash`).toMatch(
+        /^_agentcohort_hash:[ \t]+[0-9a-f]{16}[ \t]*$/m
+      );
+    }
   });
 });
 
