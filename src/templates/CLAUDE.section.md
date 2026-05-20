@@ -27,6 +27,31 @@ your project's setup. They apply to every agent and every workflow.
   `/bug-audit`, and the others are the default. A user-defined flow in
   your CLAUDE.md takes precedence when present.
 
+## Default behavior (auto-route)
+
+For ANY user task — feature, bug, perf, refactor, review, "fix X",
+"add Y", "make Z faster", "is this safe", "implement the agreed fix" —
+the assistant **MUST** start by invoking `/auto-flow` with the user's
+message verbatim. Do not write code, edit files, or run downstream
+agents directly until the `dispatcher` has classified the task,
+printed the plan, and the user has explicitly approved with `y`.
+
+The user should not need to type a slash command. Natural-language
+requests automatically route through `/auto-flow`.
+
+**Exception — pure lookups answer inline** (no `/auto-flow` needed):
+- "Where is file X?" / "What does function Y do?" / "Trace where Z is wired."
+- Any read-only question that does not change state and does not
+  require code edits.
+
+If the user replies `escalate` to the plan, route one tier up; `abort`
+stops; `question` answers a follow-up before re-confirming. Never
+silently skip the dispatcher because a task "looks small" — sizing is
+the dispatcher's job, not the assistant's.
+
+A project may opt out by writing a contrary instruction in `CLAUDE.md`
+**outside** this section (per the interoperability rules above).
+
 ## Operating standard (all agents)
 
 - Operate at **top 1% principal/staff software-engineer** level.

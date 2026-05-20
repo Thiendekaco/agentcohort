@@ -5,10 +5,59 @@
 > with one command.
 
 `agentcohort` is not just a template copier. It installs a coordinated set of
-**15 subagents**, **7 workflow commands**, and **routing rules** that make
+**16 subagents**, **9 workflow commands**, and **routing rules** that make
 Claude Code work like a disciplined engineering org: explore before changing,
 prove root cause before fixing, measure before optimizing, and review before
 shipping.
+
+A **smart dispatcher** (haiku) classifies every task and runs the smallest
+sufficient pipeline — small tasks stay cheap, normal work stays normal, and
+sensitive tasks (auth / schema / payment / …) are *forced* up to the full
+pipeline with architect + expert-council.
+
+---
+
+## Why agentcohort — token & cost savings
+
+The dispatcher rejects the "one-size-fits-all" pipeline and matches agent
+count *and* model strength to task complexity. Estimated savings vs. the
+naïve baseline of running the full `/dev-flow` (or any full pipeline) on
+every request:
+
+| Task type | Naïve baseline | With agentcohort | Est. savings |
+|---|---|---|---|
+| Lookups — "where is X", "what does Y do" | full pipeline | **Tier 0**: answered inline, 0 agents | **~100%** |
+| Read & explain — "trace this flow" | full pipeline | **Tier 1**: 1 haiku scout | **~95%** |
+| Small bug fix (root cause known) | 6 agents incl. 2× opus | **Tier 2a** `/quick-fix` — 4 agents, 1× opus | **~45%** |
+| Small feature (1–3 local files) | 6 agents incl. 2× opus | **Tier 2b** `/quick-feature` — 4 agents, 1× opus | **~50%** |
+| Normal feature / bug / perf | full pipeline | full pipeline (unchanged) | 0% |
+| Sensitive — auth / schema / payment / cache / concurrency | full pipeline | full **+ forced** architect + expert-council | **−20%** (intentional) |
+
+**Typical project mix** (~40% lookups & reads, ~30% small fixes &
+features, ~30% normal+ work): expect roughly **50–70% lower token
+spend on Claude calls** vs. always running a full pipeline — while
+sensitive work spends *more* (on purpose).
+
+**Where the savings come from**
+
+1. **Lookups skip the pipeline.** "Where is the auth check?" used to
+   fire scout → planner → implementer → reviewer if you typed
+   `/dev-flow`. Now it returns an inline answer.
+2. **Architect & expert-council are skipped when not needed.** Two
+   opus stages account for the bulk of cost — keep them only when the
+   change is architecture-sensitive.
+3. **Small fixes use a 4-agent pipeline instead of 6.** Same reviewer
+   (non-negotiable), no planner stage when scope is small.
+4. **Sensitive changes are *more* expensive on purpose.** Forced
+   architect + expert-council are far cheaper than shipping a broken
+   auth migration.
+
+> **Methodology:** percentages are derived from Claude API pricing
+> across haiku / sonnet / opus tiers and typical per-agent context
+> size in a mid-sized TypeScript codebase. They are estimates, not
+> benchmarked guarantees — your task mix and project size drive
+> actual numbers. The dispatcher itself costs about one haiku call
+> (~$0.005) per request, included in the "with agentcohort" column.
 
 ---
 
@@ -37,13 +86,24 @@ cd path/to/your-project       # any project you want to equip
 agentcohort init              # installs agents + commands + routing rules here
 ```
 
-Then open Claude Code in that project and run:
+Then open Claude Code in that project and **just type your request in
+natural language** — no slash command required:
 
 ```
-/auto-flow <describe your task, bug, or paste a diff>
+Add a date-range filter to the /transactions page
+Fix the off-by-one in invoice totals
+This page takes 8s to render, profile it
 ```
 
-`/auto-flow` classifies the work and routes it to the right pipeline.
+The dispatcher classifies the task, prints the proposed pipeline +
+estimated cost band, and waits for you to approve before any agent
+runs.
+
+> You can still invoke a specific pipeline directly with `/auto-flow`,
+> `/dev-flow`, `/bug-audit`, `/perf-hunt`, `/quick-fix`,
+> `/quick-feature`, `/bug-fix-approved`, `/review-diff`, or
+> `/fix-blockers`. Pure lookups ("where is file X?") are answered
+> inline without invoking the dispatcher.
 
 ### Commands
 
@@ -64,15 +124,16 @@ Flags compose: `agentcohort init --yes --backup`, `--force --backup`, etc.
 ```
 .claude/
   agents/
-    repo-scout.md            solution-architect.md   feature-planner.md
-    feature-implementer.md   test-verifier.md        final-reviewer.md
-    bug-hunter.md            root-cause-analyst.md   reproduction-engineer.md
-    regression-guard.md      bug-fixer.md
+    dispatcher.md            repo-scout.md           solution-architect.md
+    feature-planner.md       feature-implementer.md  test-verifier.md
+    final-reviewer.md        bug-hunter.md           root-cause-analyst.md
+    reproduction-engineer.md regression-guard.md     bug-fixer.md
     performance-hunter.md    perf-optimizer.md       perf-reviewer.md
     expert-council.md
   commands/
-    auto-flow.md   dev-flow.md   bug-audit.md   bug-fix-approved.md
-    perf-hunt.md   review-diff.md   fix-blockers.md
+    auto-flow.md     quick-fix.md     quick-feature.md
+    dev-flow.md      bug-audit.md     bug-fix-approved.md
+    perf-hunt.md     review-diff.md   fix-blockers.md
 CLAUDE.md                          # a "# Agentcohort Routing Rules" section
 ```
 
@@ -111,15 +172,21 @@ you've already set up.
 
 | Command | Pipeline | Use it for |
 |---|---|---|
-| `/auto-flow` | classify → route | When unsure — it picks the flow. |
-| `/dev-flow` | scout → architect\* → planner → implementer → test-verifier → final-reviewer | Features & refactors. |
-| `/bug-audit` | bug-hunter → root-cause-analyst → reproduction-engineer → expert-council | Bugs / regressions / bad data / stability. **No fixing.** |
-| `/bug-fix-approved` | bug-fixer → regression-guard → test-verifier → final-reviewer | Implement a fix you already approved. |
-| `/perf-hunt` | performance-hunter → architect\* → perf-optimizer → test-verifier → perf-reviewer | Slowness / bottlenecks. |
-| `/review-diff` | final-reviewer | Review the current diff/PR. |
+| `/auto-flow` | dispatcher → plan → user approval → chosen pipeline | The **default** — invoked automatically for any natural-language task. |
+| `/dev-flow` | scout → architect\* → planner → implementer → test-verifier → final-reviewer | Tier 3: normal feature or refactor. |
+| `/quick-feature` | scout → implementer → test-verifier → final-reviewer | Tier 2b: small feature in 1–3 local files, no API/schema/auth. |
+| `/bug-audit` | bug-hunter → root-cause-analyst → reproduction-engineer → expert-council | Tier 3: bugs / regressions / bad data / stability. **No fixing.** |
+| `/bug-fix-approved` | bug-fixer → regression-guard → test-verifier → final-reviewer | Tier 3: implement an audited & approved fix. |
+| `/quick-fix` | bug-fixer → regression-guard → test-verifier → final-reviewer | Tier 2a: small bug fix, root cause already known. |
+| `/perf-hunt` | performance-hunter → architect\* → perf-optimizer → test-verifier → perf-reviewer | Tier 3: slowness / bottlenecks. |
+| `/review-diff` | final-reviewer | Review the current diff / PR. |
 | `/fix-blockers` | feature-implementer → test-verifier | Fix only the blockers a review listed. |
 
 \* the architect stage runs only when the change is architecture-sensitive.
+Tier 4 (escalated by the dispatcher when an escalation keyword fires —
+auth / schema / migration / payment / security / concurrency / cache /
+…) forces the architect and expert-council stages on, regardless of
+the chosen pipeline.
 
 ### Model strategy
 
