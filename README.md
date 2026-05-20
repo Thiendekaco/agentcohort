@@ -113,6 +113,58 @@ approval gate.
 - **Sonnet** — implementation, testing, bug & performance hunting.
 - **Opus** — architecture, root-cause analysis, expert council, final review.
 
+## Customizing model strategy
+
+`agentcohort init` will (interactively) prompt you to either use the
+default Claude model IDs or pick your own for each tier. Your choice is
+saved to `.agentcohort.json` at the project root and reused on later
+runs.
+
+To revisit your choice without re-installing everything, run:
+
+```bash
+agentcohort config
+```
+
+This re-prompts for the three tier model IDs, shows a diff of which
+installed agents would change, and applies the changes with your
+confirmation.
+
+To force a re-prompt during install (instead of using the existing
+`.agentcohort.json`), run:
+
+```bash
+agentcohort init --reconfigure
+```
+
+### `.agentcohort.json` schema (v1)
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Thiendekaco/agentcohort/main/schema/agentcohort-config-v1.json",
+  "version": 1,
+  "models": {
+    "premium": "claude-opus-4-7",
+    "mid": "claude-sonnet-4-6",
+    "cheap": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+- **premium** — architecture, root-cause analysis, expert council, final
+  review.
+- **mid** — implementation, testing, bug & performance hunting.
+- **cheap** — fast read-only repo scout.
+
+Hand-editing one of the installed `.claude/agents/*.md` files to use a
+specific model ID is respected: subsequent `agentcohort init` and
+`agentcohort config` runs leave that hand-edit alone (the tool only
+rewrites lines that are still tier aliases or match the previous
+config's IDs).
+
+Model IDs are not validated by the tool — if the ID is invalid, Claude
+Code will fail at agent spawn time.
+
 ## Customizing agents
 
 The installed files are plain Markdown and **yours to edit**:
@@ -146,7 +198,8 @@ before changing them (or back them up with `--backup`).
 - **`--dry-run`** performs zero writes and zero backups.
 - Backups are written next to the original as
   `&lt;file&gt;.backup-YYYYMMDD-HHMMSS` and never overwrite an existing backup.
-- Cross-platform (Windows/macOS/Linux), zero runtime dependencies, no
+- Cross-platform (Windows/macOS/Linux); a single runtime dependency
+  (`@inquirer/prompts` for the interactive model-tier prompt), no
   shell-specific behavior.
 
 ## Development

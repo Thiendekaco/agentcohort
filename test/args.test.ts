@@ -53,3 +53,28 @@ describe('helpText', () => {
     expect(h).toContain('NEVER');
   });
 });
+
+describe('parseArgs - PR 2 additions', () => {
+  it('parses the new `config` command', () => {
+    const a = parseArgs(['config']);
+    expect(a.command).toBe('config');
+    expect(a.unknown).toEqual([]);
+  });
+
+  it('parses --reconfigure as a flag', () => {
+    const a = parseArgs(['init', '--reconfigure']);
+    expect(a.command).toBe('init');
+    expect(a.reconfigure).toBe(true);
+  });
+
+  it('does not set --reconfigure by default', () => {
+    const a = parseArgs(['init']);
+    expect(a.reconfigure).toBe(false);
+  });
+
+  it('parses --reconfigure and --force together (the rejection happens in cli, not parseArgs)', () => {
+    const a = parseArgs(['init', '--reconfigure', '--force']);
+    expect(a.reconfigure).toBe(true);
+    expect(a.force).toBe(true);
+  });
+});

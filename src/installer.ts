@@ -17,6 +17,8 @@ import { buildManifest, EntryKind, ManifestEntry } from './manifest';
 import { getTemplatesDir } from './paths';
 import type { ConflictDecision, ConflictResolver } from './prompt';
 import type { Logger } from './logger';
+import { renderAgentTemplate } from './render';
+import type { ModelsConfig } from './config';
 
 export type Disposition =
   | 'created'
@@ -44,6 +46,7 @@ export interface InitOptions {
   backup: boolean;
   /** When false, conflicts are resolved by safe automatic defaults. */
   interactive: boolean;
+  models: ModelsConfig;
   resolver?: ConflictResolver;
   now?: () => Date;
   logger?: Logger;
@@ -160,7 +163,10 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // ---- per-entry handlers (closures over decide/record/doBackup) ----
 
   async function handleRegular(entry: ManifestEntry): Promise<void> {
-    const template = readFileSync(entry.templateAbsPath, 'utf8');
+    const rawTemplate = readFileSync(entry.templateAbsPath, 'utf8');
+    const template = entry.targetRelPath.startsWith('.claude/agents/')
+      ? renderAgentTemplate(rawTemplate, options.models)
+      : rawTemplate;
     const existing = readIfExists(entry.targetAbsPath);
 
     if (existing === null) {

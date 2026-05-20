@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runInit, InitOptions } from '../src/installer';
 import type { ConflictResolver } from '../src/prompt';
+import { DEFAULT_MODELS } from '../src/defaults';
 
 const TEMPLATES = resolve(process.cwd(), 'src', 'templates');
 const FIXED_NOW = () => new Date(2024, 2, 9, 10, 11, 12); // 2024-03-09 10:11:12
@@ -36,6 +37,11 @@ function baseOpts(cwd: string, over: Partial<InitOptions> = {}): InitOptions {
     interactive: false,
     now: FIXED_NOW,
     templatesDir: TEMPLATES,
+    models: {
+      premium: DEFAULT_MODELS.premium,
+      mid: DEFAULT_MODELS.mid,
+      cheap: DEFAULT_MODELS.cheap,
+    },
     ...over,
   };
 }
@@ -59,9 +65,12 @@ describe('runInit - fresh project', () => {
     expect(result.actions.every((a) => a.disposition === 'created')).toBe(true);
     expect(result.actions.some((a) => a.backupPath)).toBe(false);
 
-    // installed content equals the bundled template
+    // installed content is the rendered template (tier aliases replaced with concrete IDs)
     const tpl = readFileSync(join(TEMPLATES, 'agents', 'repo-scout.md'), 'utf8');
-    expect(readFileSync(join(cwd, '.claude/agents/repo-scout.md'), 'utf8')).toBe(tpl);
+    const installed = readFileSync(join(cwd, '.claude/agents/repo-scout.md'), 'utf8');
+    // The raw template has `model: haiku`; after rendering it becomes a concrete model ID.
+    expect(installed).not.toBe(tpl);
+    expect(installed).toContain(`model: ${DEFAULT_MODELS.cheap}`);
   });
 
   it('is idempotent: a second run reports everything unchanged', async () => {
@@ -70,6 +79,47 @@ describe('runInit - fresh project', () => {
     const second = await runInit(baseOpts(cwd));
     expect(second.actions.every((a) => a.disposition === 'unchanged')).toBe(true);
     expect(second.actions.some((a) => a.backupPath)).toBe(false);
+  });
+
+  it('renders agent files with the default concrete model IDs', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const scout = readFileSync(
+      join(cwd, '.claude', 'agents', 'repo-scout.md'),
+      'utf8'
+    );
+    expect(scout).toContain(`model: ${DEFAULT_MODELS.cheap}`);
+    expect(scout).not.toMatch(/^model:[ \t]+haiku[ \t]*$/m);
+
+    const reviewer = readFileSync(
+      join(cwd, '.claude', 'agents', 'final-reviewer.md'),
+      'utf8'
+    );
+    expect(reviewer).toContain(`model: ${DEFAULT_MODELS.premium}`);
+  });
+
+  it('renders agent files with custom model IDs', async () => {
+    const cwd = project();
+    await runInit(
+      baseOpts(cwd, {
+        models: { premium: 'P', mid: 'M', cheap: 'C' },
+      })
+    );
+    const scout = readFileSync(
+      join(cwd, '.claude', 'agents', 'repo-scout.md'),
+      'utf8'
+    );
+    expect(scout).toContain('model: C');
+  });
+
+  it('does NOT rewrite model: in command files', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const tplPath = join(TEMPLATES, 'commands', 'auto-flow.md');
+    const installedPath = join(cwd, '.claude', 'commands', 'auto-flow.md');
+    expect(readFileSync(installedPath, 'utf8')).toBe(
+      readFileSync(tplPath, 'utf8')
+    );
   });
 });
 
@@ -103,9 +153,7 @@ describe('runInit - conflicts on a regular file', () => {
     expect(rec.disposition).toBe('overwritten');
     expect(rec.backupPath).toBeDefined();
     expect(readFileSync(rec.backupPath!, 'utf8')).toBe('OLD USER CONTENT\n');
-    expect(readFileSync(p, 'utf8')).toBe(
-      readFileSync(join(TEMPLATES, 'agents', 'repo-scout.md'), 'utf8')
-    );
+    expect(readFileSync(p, 'utf8')).toContain(`model: ${DEFAULT_MODELS.cheap}`);
   });
 
   it('--force overwrites WITHOUT a backup unless --backup is set', async () => {

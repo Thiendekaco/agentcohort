@@ -1,6 +1,6 @@
 {
   "name": "agentcohort",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Install a principal/staff-level Claude Code AI software engineering organization (agents + workflows + routing rules) into any project with one command.",
   "keywords": [
     "claude",
@@ -52,5 +52,8 @@
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.10.1"
   }
 }
