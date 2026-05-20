@@ -14,25 +14,27 @@ shipping.
 
 ## Install
 
+`agentcohort` is a CLI — install it **globally**, once:
+
 ```bash
-npm i agentcohort
+npm i -g agentcohort
 ```
 
-Or run it without installing:
+Or run it without installing anything (per-project, ad-hoc):
 
 ```bash
 npx agentcohort init
 ```
 
-> The npm package is `agentcohort`; the CLI command it installs is
-> just `agentcohort`.
+> The npm package is `agentcohort`; the CLI command it installs is also
+> `agentcohort`.
 
 ## Quick start
 
-From the root of the project you want to equip:
-
 ```bash
-agentcohort init
+npm i -g agentcohort          # once, globally
+cd path/to/your-project       # any project you want to equip
+agentcohort init              # installs agents + commands + routing rules here
 ```
 
 Then open Claude Code in that project and run:
