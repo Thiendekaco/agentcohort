@@ -18,6 +18,7 @@ import { getTemplatesDir } from './paths';
 import type { ConflictDecision, ConflictResolver } from './prompt';
 import type { Logger } from './logger';
 import { renderAgentTemplate } from './render';
+import { stampTemplate } from './stamp';
 import type { ModelsConfig } from './config';
 
 export type Disposition =
@@ -164,9 +165,12 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
 
   async function handleRegular(entry: ManifestEntry): Promise<void> {
     const rawTemplate = readFileSync(entry.templateAbsPath, 'utf8');
-    const template = entry.targetRelPath.startsWith('.claude/agents/')
+    const rendered = entry.targetRelPath.startsWith('.claude/agents/')
       ? renderAgentTemplate(rawTemplate, options.models)
       : rawTemplate;
+    // Stamp every installed agent and command so `agentcohort doctor`
+    // can later distinguish unchanged / outdated / user-edited / unstamped.
+    const template = stampTemplate(rendered);
     const existing = readIfExists(entry.targetAbsPath);
 
     if (existing === null) {

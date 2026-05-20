@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runConfigCmd, ConfigCmdResult } from '../src/configCmd';
 import { CONFIG_FILENAME } from '../src/config';
-import type { ModelsConfig } from '../src/config';
+import type { ModelsConfig, GatesConfig } from '../src/config';
+import { DEFAULT_GATES } from '../src/defaults';
 
 const tmps: string[] = [];
 function project(): string {
@@ -34,6 +35,13 @@ const DEFAULT_LIKE: ModelsConfig = {
   cheap: 'claude-haiku-4-5-20251001',
 };
 
+/** A promptGates mock that echoes the current gates (no-op for tests
+ *  that don't care about gate flow). */
+const passGates = (): ReturnType<typeof vi.fn> =>
+  vi.fn().mockImplementation((current: GatesConfig) => Promise.resolve(current));
+
+const DEFAULT_GATES_CFG: GatesConfig = { ...DEFAULT_GATES };
+
 describe('runConfigCmd', () => {
   it('writes config and does not touch files when no changes', async () => {
     const cwd = project();
@@ -44,10 +52,12 @@ describe('runConfigCmd', () => {
     const result = await runConfigCmd({
       cwd,
       promptModelStrategy: promptMock,
+      promptGates: passGates(),
       confirm: confirmMock,
     });
 
     expect(result.status).toBe('no-changes');
+    expect(result.gatesChanged).toBe(false);
     expect(existsSync(join(cwd, CONFIG_FILENAME))).toBe(true);
     expect(confirmMock).not.toHaveBeenCalled();
     // Agent file unchanged
@@ -72,6 +82,7 @@ describe('runConfigCmd', () => {
     const result = await runConfigCmd({
       cwd,
       promptModelStrategy: promptMock,
+      promptGates: passGates(),
       confirm: confirmMock,
     });
 
@@ -104,6 +115,7 @@ describe('runConfigCmd', () => {
     const result = await runConfigCmd({
       cwd,
       promptModelStrategy: promptMock,
+      promptGates: passGates(),
       confirm: confirmMock,
     });
 
@@ -136,11 +148,81 @@ describe('runConfigCmd', () => {
     const result = await runConfigCmd({
       cwd,
       promptModelStrategy: promptMock,
+      promptGates: passGates(),
       confirm: confirmMock,
     });
     // Still saved the config
     expect(existsSync(join(cwd, CONFIG_FILENAME))).toBe(true);
     expect(result.status).toBe('no-agents');
     expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it('gates-only change: writes config, no agent rewrites, no confirm', async () => {
+    const cwd = project();
+    writeFileSync(join(cwd, '.claude', 'agents', 'a.md'), agent('model: opus'));
+
+    const newGates: GatesConfig = { ...DEFAULT_GATES_CFG, architect: 'off' };
+    const promptMock = vi.fn().mockResolvedValue(DEFAULT_LIKE);
+    const gatesMock = vi.fn().mockResolvedValue(newGates);
+    const confirmMock = vi.fn().mockResolvedValue(true);
+    const result = await runConfigCmd({
+      cwd,
+      promptModelStrategy: promptMock,
+      promptGates: gatesMock,
+      confirm: confirmMock,
+    });
+
+    expect(result.status).toBe('applied');
+    expect(result.gatesChanged).toBe(true);
+    expect(result.changes).toEqual([]);
+    // Confirm is for the agent-file rewrite — must NOT be asked when
+    // only gates changed.
+    expect(confirmMock).not.toHaveBeenCalled();
+    // Agent file is unchanged
+    expect(readFileSync(join(cwd, '.claude', 'agents', 'a.md'), 'utf8')).toBe(
+      agent('model: opus')
+    );
+    // Config now contains the new gates
+    const reloaded = JSON.parse(
+      readFileSync(join(cwd, CONFIG_FILENAME), 'utf8')
+    );
+    expect(reloaded.gates.architect).toBe('off');
+    expect(reloaded.gates.plan).toBe('on');
+  });
+
+  it('preserves explicit gates field from existing config even when unchanged', async () => {
+    const cwd = project();
+    writeFileSync(join(cwd, '.claude', 'agents', 'a.md'), agent('model: opus'));
+    // Existing config explicitly sets gates to defaults — user opted in.
+    writeFileSync(
+      join(cwd, CONFIG_FILENAME),
+      JSON.stringify(
+        {
+          version: 1,
+          models: DEFAULT_LIKE,
+          gates: { architect: 'on', plan: 'on', 'root-cause': 'on', 'expert-council': 'on' },
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+
+    const result = await runConfigCmd({
+      cwd,
+      promptModelStrategy: vi.fn().mockResolvedValue(DEFAULT_LIKE),
+      promptGates: passGates(),
+      confirm: vi.fn().mockResolvedValue(true),
+    });
+
+    expect(result.status).toBe('no-changes');
+    expect(result.gatesChanged).toBe(false);
+    // Round-trip: gates field is still present (we don't silently strip
+    // it just because it equals defaults — the user wrote it explicitly).
+    const reloaded = JSON.parse(
+      readFileSync(join(cwd, CONFIG_FILENAME), 'utf8')
+    );
+    expect(reloaded.gates).toBeDefined();
+    expect(reloaded.gates.architect).toBe('on');
   });
 });

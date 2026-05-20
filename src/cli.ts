@@ -4,10 +4,12 @@ import { ExitPromptError } from '@inquirer/core';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
 import { promptModelStrategy } from './promptModels';
+import { promptGates } from './promptGates';
 import { runConfigCmd } from './configCmd';
-import { loadConfig, writeConfig, resolveModels } from './config';
+import { runDoctor, DoctorReport, Severity } from './doctor';
+import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
-import { getVersion } from './paths';
+import { getTemplatesDir, getVersion } from './paths';
 import { parseArgs, helpText } from './args';
 
 function printSummary(result: InitResult): void {
@@ -71,10 +73,33 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 0;
   }
 
-  if (args.command !== 'init' && args.command !== 'config') {
+  if (
+    args.command !== 'init' &&
+    args.command !== 'config' &&
+    args.command !== 'doctor'
+  ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
     return 1;
+  }
+
+  if (args.command === 'doctor') {
+    try {
+      const report = runDoctor({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatDoctorReport(report));
+      }
+      return report.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ doctor: ${message}\n`, 'red'));
+      return 2;
+    }
   }
 
   if (args.reconfigure && (args.yes || args.force)) {
@@ -119,13 +144,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const result = await runConfigCmd({
         cwd,
         promptModelStrategy,
+        promptGates,
         confirm: (message) => confirm({ message, default: true }),
       });
+      const appliedDetail = result.changes.length > 0
+        ? `${result.changes.length} agent file${result.changes.length === 1 ? '' : 's'}` +
+          (result.gatesChanged ? ' + gates' : '')
+        : 'gates';
       const msg = {
         'no-changes': 'No changes. Configuration is up to date.',
         'no-agents': 'Config saved. No installed agents found — run `agentcohort init` to install.',
         'cancelled': 'Cancelled. No changes made.',
-        'applied': `Applied ${result.changes.length} change(s) to installed agents.`,
+        'applied': `Applied changes (${appliedDetail}).`,
       }[result.status];
       process.stdout.write(`${paint('•', 'cyan')} ${msg}\n`);
       return 0;
@@ -137,8 +167,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
     if (interactive && (existingConfig === null || args.reconfigure)) {
       const newModels = await promptModelStrategy(existingConfig?.models);
+      const newGates = await promptGates(resolveGates(existingConfig));
       // Persist config BEFORE install so a partial install can be re-run idempotently.
-      writeConfig(cwd, { version: 1, models: newModels });
+      // Drop the gates field when nothing was set and user accepted defaults — matches
+      // the runConfigCmd policy (explicit > implicit).
+      const preInstallConfig =
+        existingConfig?.gates !== undefined ||
+        newGates.architect !== 'on' ||
+        newGates.plan !== 'on' ||
+        newGates.bottleneck !== 'auto' ||
+        newGates['root-cause'] !== 'on' ||
+        newGates['expert-council'] !== 'on'
+          ? { version: 1 as const, models: newModels, gates: newGates }
+          : { version: 1 as const, models: newModels };
+      writeConfig(cwd, preInstallConfig);
       models = newModels;
     }
 
@@ -167,6 +209,36 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   } finally {
     resolverHandle?.close();
   }
+}
+
+function formatDoctorReport(report: DoctorReport): string {
+  const SEVERITY_GLYPH: Record<Severity, string> = {
+    ok: paint('✓', 'green'),
+    warn: paint('⚠', 'yellow'),
+    error: paint('✗', 'red'),
+  };
+  const out: string[] = [];
+  out.push(paint('\nAgentcohort Doctor', 'bold', 'cyan'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  for (const section of report.sections) {
+    out.push(paint(`${section.name}:`, 'bold'));
+    for (const check of section.checks) {
+      out.push(`  ${SEVERITY_GLYPH[check.severity]} ${check.message}`);
+      for (const d of check.detail ?? []) {
+        out.push(paint(`      └─ ${d}`, 'gray'));
+      }
+    }
+    out.push('');
+  }
+
+  const summaryLine = {
+    healthy: paint('Summary: Healthy.', 'green'),
+    warnings: paint('Summary: Healthy with warnings.', 'yellow'),
+    errors: paint('Summary: Unhealthy — fix the errors above.', 'red'),
+  }[report.summary];
+  out.push(summaryLine);
+  return out.join('\n') + '\n';
 }
 
 // Auto-run only when executed as the bin (not when imported by tests/tooling).

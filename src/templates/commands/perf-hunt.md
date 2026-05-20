@@ -12,14 +12,34 @@ changes. No blind optimization.**
 
 1. **performance-hunter** — define "slow" (metric, workload, target), gather
    measurements, rank bottlenecks, separate measured from hypothesized.
-2. **solution-architect** — *only if* the likely fix affects caching, data
+2. **🚦 HUMAN GATE — bottleneck**. Read `.agentcohort.json` for
+   `gates.bottleneck` (default `auto`). If `on`, OR `auto` AND the
+   dispatcher classified this as Tier 4 / has an escalation keyword
+   (cache, concurrency, race condition, transaction, …), STOP and
+   surface the ranked bottleneck list for user confirmation BEFORE
+   architect/optimizer cost is committed. Wait for:
+   - `y` → continue to step 3 with the top-ranked bottleneck as target.
+   - `revise <feedback>` → re-run performance-hunter with the feedback
+     (e.g. "ignore the render path, focus on the DB query").
+   - `abort` → stop the pipeline.
+   If `off`, skip this gate and continue immediately.
+3. **solution-architect** — *only if* the likely fix affects caching, data
    flow, or architecture. Decide the boundary-safe approach. Otherwise skip
    and say why.
-3. **perf-optimizer** — apply the smallest reversible, evidence-backed change;
+4. **🚦 HUMAN GATE — architect** (only if step 3 ran). Read
+   `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
+   `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
+   STOP and surface the architect's decision (chosen approach + caching/
+   invalidation plan + risks) for user review. Wait for:
+   - `y` → continue to step 5.
+   - `revise <feedback>` → re-run architect with the feedback.
+   - `abort` → stop the pipeline.
+   If `off`, skip this gate and continue immediately.
+5. **perf-optimizer** — apply the smallest reversible, evidence-backed change;
    measure before/after under the same workload; preserve behavior.
-4. **test-verifier** — run tests/typecheck/lint; confirm behavior unchanged;
+6. **test-verifier** — run tests/typecheck/lint; confirm behavior unchanged;
    report real output.
-5. **perf-reviewer** — verify the gain is real and representative, behavior is
+7. **perf-reviewer** — verify the gain is real and representative, behavior is
    preserved, any cache has sound invalidation, and assess new regression
    risk. Verdict required.
 

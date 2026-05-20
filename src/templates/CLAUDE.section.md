@@ -27,6 +27,45 @@ your project's setup. They apply to every agent and every workflow.
   `/bug-audit`, and the others are the default. A user-defined flow in
   your CLAUDE.md takes precedence when present.
 
+## OpenWolf interop (optional)
+
+`agentcohort` does **not** bundle [OpenWolf](https://github.com/cytostack/openwolf).
+If `.wolf/` exists in the project, OpenWolf was installed separately
+by the user (`npm i -g openwolf && openwolf init`), and agentcohort
+agents will consult its output files for cheaper, more accurate work.
+
+**License note.** `agentcohort` is MIT. OpenWolf is AGPL-3.0. No
+OpenWolf code is required, copied, or linked by agentcohort — agents
+only read text/JSON files OpenWolf has written into `.wolf/`. The
+AGPL terms apply only to OpenWolf itself.
+
+**Detection.** Agents check for `.wolf/` at boot. If present, they
+read `.wolf/OPENWOLF.md` and then consult the file(s) relevant to
+their role per the matrix below. If absent, agents proceed normally.
+**Agents never write to `.wolf/`** — OpenWolf manages it via hooks.
+
+**Read matrix.** When `.wolf/` is present:
+
+| Agent | Reads from `.wolf/` | Purpose |
+|---|---|---|
+| `dispatcher` | presence check only | Note `OpenWolf active` in the plan output |
+| `repo-scout` | `anatomy.md` | Skip files whose description suffices; estimate token cost before opening |
+| `solution-architect` | `anatomy.md`, `cerebrum.md` | Module sizing + recorded architecture preferences |
+| `feature-planner` | `anatomy.md`, `cerebrum.md` | File sizing + recorded preferences for plan |
+| `feature-implementer`, `bug-fixer` | `cerebrum.md` (`## Do-Not-Repeat`, `## User Preferences`) | Verify the planned change does not violate a recorded rule |
+| `regression-guard`, `test-verifier` | `cerebrum.md` | Recorded test conventions / scaffolding rules |
+| `final-reviewer`, `perf-reviewer` | `cerebrum.md` | Run the diff against `## Do-Not-Repeat`; a violation is a BLOCKER |
+| `bug-hunter`, `root-cause-analyst`, `reproduction-engineer` | `buglog.json` | Check for matching past fixes before re-investigating (verify the codebase has not drifted before accepting) |
+| `performance-hunter`, `perf-optimizer` | `anatomy.md` | Token-size hints for hot-path prioritization |
+| `expert-council` | `buglog.json`, `cerebrum.md` | Historical bugs + recorded preferences inform the panel's options |
+
+**Conflict policy.** If an OpenWolf-recorded rule conflicts with this
+section, OpenWolf wins (it captures what *this* project learned).
+If both are silent, the agent's default playbook applies.
+
+**Failure mode.** A missing `.wolf/` file or invalid JSON is logged
+and ignored — agents must not block on OpenWolf I/O.
+
 ## Default behavior (auto-route)
 
 For ANY user task — feature, bug, perf, refactor, review, "fix X",
@@ -106,6 +145,73 @@ specific pipeline directly:
 \* architect stage runs only when the change is architecture-sensitive
 (module boundaries, public API, data model/schema, auth, concurrency,
 caching, cross-cutting behavior) — otherwise it is skipped with a reason.
+
+## Human review gates
+
+Some pipeline stages produce **load-bearing decisions** — an
+architecture choice, a root-cause verdict, a plan that locks in the
+implementation surface. agentcohort pauses the pipeline at these
+points so the user can sanity-check the decision before more
+expensive stages run on top of it.
+
+**Configured gates** (load-bearing decisions default to `on`):
+
+| Gate | Position | Default | What you confirm |
+|---|---|---|---|
+| `architect` | after `solution-architect` (in `/dev-flow` and `/perf-hunt`, only if arch-sensitive) | `on` | The chosen architecture + trade-offs |
+| `plan` | after `feature-planner` (in `/dev-flow`) | `on` | The exact files/tests/verification before code is written |
+| `bottleneck` | after `performance-hunter` (in `/perf-hunt`) | `auto` | The right bottleneck to attack before architect / optimizer cost is committed |
+| `root-cause` | after `root-cause-analyst` (in `/bug-audit`) | `on` | The root cause verdict before a reproduction is built |
+| `expert-council` | after `expert-council` (always, end of `/bug-audit`) | `on` | The recommended solution before `/bug-fix-approved` can run |
+| `final` | after `final-reviewer` (every code change) | always on | The reviewer's APPROVE / BLOCK verdict |
+
+**Gate modes:**
+
+- `on` — pause every time.
+- `off` — never pause.
+- `auto` — pause when the dispatcher escalated to Tier 4 OR an
+  escalation keyword fired (auth/schema/payment/security/concurrency/
+  cache/…).
+
+**Configure globally** with `.agentcohort.json`:
+
+```json
+{
+  "version": 1,
+  "models": { "premium": "...", "mid": "...", "cheap": "..." },
+  "gates": {
+    "architect": "on",
+    "plan": "auto",
+    "bottleneck": "auto",
+    "root-cause": "on",
+    "expert-council": "on"
+  }
+}
+```
+
+Missing keys fall back to defaults. Run `agentcohort config` to
+re-prompt interactively.
+
+**Per-task override** at the dispatcher plan prompt:
+
+```
+Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
+> gates -plan             # skip the plan gate for THIS task only
+> gates +architect        # force architect gate on for THIS task only
+> gates +bottleneck       # force bottleneck gate on (default is auto)
+```
+
+Overrides do not modify `.agentcohort.json`.
+
+**Reply contract at a gate.** When a gate fires, agents present the
+relevant artifact and wait for:
+
+- `y` — continue to the next stage.
+- `revise <feedback>` — re-run the current stage with the feedback.
+- `abort` — stop the pipeline.
+
+Agents do not auto-continue past a gate that is `on` and has not
+been replied to.
 
 ## Bug audit rule (non-negotiable)
 

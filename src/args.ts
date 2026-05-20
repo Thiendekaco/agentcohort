@@ -7,6 +7,7 @@ export interface ParsedArgs {
   force: boolean;
   backup: boolean;
   reconfigure: boolean;
+  json: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -19,6 +20,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--force': 'force',
   '--backup': 'backup',
   '--reconfigure': 'reconfigure',
+  '--json': 'json',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -34,6 +36,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     force: false,
     backup: false,
     reconfigure: false,
+    json: false,
     help: false,
     version: false,
     unknown: [],
@@ -69,6 +72,10 @@ ${b('COMMANDS')}
   config               Re-prompt the model-tier strategy, show a diff of
                        any pending changes to installed agents, and apply
                        them with confirmation.
+  doctor               Read-only health check: verify the install is
+                       intact, the config is valid, and no installed file
+                       has drifted from the bundled template. Exits 0 when
+                       healthy, 1 on any warning/error.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -83,6 +90,9 @@ ${b('OPTIONS')}
   --reconfigure        (init only) Re-prompt model-tier strategy even if a
                        .agentcohort.json already exists. Requires a TTY;
                        not compatible with --yes.
+  --json               (doctor only) Emit the diagnostic report as JSON
+                       instead of human-readable text. Exit code is the
+                       same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 

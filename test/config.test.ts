@@ -7,9 +7,10 @@ import {
   writeConfig,
   validateConfig,
   resolveModels,
+  resolveGates,
   CONFIG_FILENAME,
 } from '../src/config';
-import { DEFAULT_MODELS } from '../src/defaults';
+import { DEFAULT_MODELS, DEFAULT_GATES } from '../src/defaults';
 
 const tmps: string[] = [];
 function project(): string {
@@ -130,5 +131,138 @@ describe('resolveModels', () => {
 
   it('returns the embedded models when config is present', () => {
     expect(resolveModels(VALID)).toEqual(VALID.models);
+  });
+});
+
+describe('gates — validateConfig', () => {
+  it('accepts a config with no gates field (backward-compat for v0.3.x)', () => {
+    const out = validateConfig(VALID);
+    expect(out.gates).toBeUndefined();
+  });
+
+  it('accepts a fully-specified gates object', () => {
+    const out = validateConfig({
+      ...VALID,
+      gates: {
+        architect: 'on',
+        plan: 'off',
+        bottleneck: 'on',
+        'root-cause': 'auto',
+        'expert-council': 'on',
+      },
+    });
+    expect(out.gates).toEqual({
+      architect: 'on',
+      plan: 'off',
+      bottleneck: 'on',
+      'root-cause': 'auto',
+      'expert-council': 'on',
+    });
+  });
+
+  it('accepts a partial gates object (rest fall back to defaults at resolve time)', () => {
+    const out = validateConfig({ ...VALID, gates: { architect: 'off' } });
+    expect(out.gates).toEqual({ architect: 'off' });
+  });
+
+  it('rejects unknown gate names (typo guard)', () => {
+    expect(() =>
+      validateConfig({ ...VALID, gates: { plzn: 'on' } })
+    ).toThrow(/unknown gate/);
+  });
+
+  it('rejects invalid gate modes', () => {
+    expect(() =>
+      validateConfig({ ...VALID, gates: { architect: 'maybe' } })
+    ).toThrow(/architect/);
+  });
+
+  it('rejects non-object gates', () => {
+    expect(() =>
+      validateConfig({ ...VALID, gates: 'on' })
+    ).toThrow(/gates must be an object/);
+  });
+});
+
+describe('resolveGates', () => {
+  it('returns DEFAULT_GATES when config is null', () => {
+    expect(resolveGates(null)).toEqual(DEFAULT_GATES);
+  });
+
+  it('returns DEFAULT_GATES when gates field is missing', () => {
+    expect(resolveGates(VALID)).toEqual(DEFAULT_GATES);
+  });
+
+  it('fills missing gate keys with defaults', () => {
+    const cfg = { ...VALID, gates: { architect: 'off' as const } };
+    expect(resolveGates(cfg)).toEqual({
+      architect: 'off',
+      plan: DEFAULT_GATES.plan,
+      bottleneck: DEFAULT_GATES.bottleneck,
+      'root-cause': DEFAULT_GATES['root-cause'],
+      'expert-council': DEFAULT_GATES['expert-council'],
+    });
+  });
+
+  it('returns the embedded gates when fully specified', () => {
+    const gates = {
+      architect: 'auto' as const,
+      plan: 'off' as const,
+      bottleneck: 'on' as const,
+      'root-cause': 'on' as const,
+      'expert-council': 'auto' as const,
+    };
+    expect(resolveGates({ ...VALID, gates })).toEqual(gates);
+  });
+
+  it('default for bottleneck is auto (the only non-on default)', () => {
+    expect(resolveGates(null).bottleneck).toBe('auto');
+    expect(resolveGates(VALID).bottleneck).toBe('auto');
+  });
+});
+
+describe('gates — writeConfig serialization', () => {
+  it('does NOT emit gates field when config has none (round-trip clean)', () => {
+    const root = project();
+    writeConfig(root, VALID);
+    const text = readFileSync(join(root, CONFIG_FILENAME), 'utf8');
+    expect(text).not.toContain('"gates"');
+  });
+
+  it('emits gates field when present and round-trips', () => {
+    const root = project();
+    const cfg = {
+      ...VALID,
+      gates: { architect: 'off' as const, plan: 'auto' as const },
+    };
+    writeConfig(root, cfg);
+    expect(loadConfig(root)).toEqual(cfg);
+  });
+
+  it('emits gates in canonical order (byte-level idempotent)', () => {
+    const root = project();
+    // Pass gates in reverse insertion order on purpose.
+    const cfg = {
+      ...VALID,
+      gates: {
+        'expert-council': 'auto' as const,
+        'root-cause': 'on' as const,
+        bottleneck: 'on' as const,
+        plan: 'off' as const,
+        architect: 'on' as const,
+      },
+    };
+    writeConfig(root, cfg);
+    const text = readFileSync(join(root, CONFIG_FILENAME), 'utf8');
+    // architect → plan → bottleneck → root-cause → expert-council
+    const a = text.indexOf('"architect"');
+    const p = text.indexOf('"plan"');
+    const b = text.indexOf('"bottleneck"');
+    const r = text.indexOf('"root-cause"');
+    const e = text.indexOf('"expert-council"');
+    expect(a).toBeLessThan(p);
+    expect(p).toBeLessThan(b);
+    expect(b).toBeLessThan(r);
+    expect(r).toBeLessThan(e);
   });
 });
