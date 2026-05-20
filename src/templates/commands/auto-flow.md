@@ -1,41 +1,77 @@
 ---
-description: Classify the task and route it to the correct Agentcohort workflow.
+description: Smart router — dispatcher classifies the task into a tier, prints a plan, and executes only after explicit user approval.
 argument-hint: <describe the task, paste the bug, or point at the diff>
 ---
 
-# /auto-flow — Task Router
+# /auto-flow — Dispatcher-driven router
 
-You are the **orchestrator**. Do not start working yet. First classify the
-task in `$ARGUMENTS`, announce the chosen flow and why, then execute it.
+You are the **orchestrator**. Do **not** start the downstream pipeline
+yet. First classify, then surface the plan, then wait for the user.
 
-## Classification rules (first match wins)
+## Step 1 — Classify (cheap, mandatory)
 
-1. **User has explicitly APPROVED a specific fix** ("approved", "go ahead and
-   fix", "implement the agreed fix")  → **BUG FIX APPROVED FLOW** → run
-   `/bug-fix-approved`.
-2. **Bug / crash / regression / failing test / incorrect data / security /
-   stability / "it's broken" / "wrong output"** (and not yet approved) →
-   **BUG AUDIT FLOW** → run `/bug-audit`. *No fixing.*
-3. **Slow / latency / bottleneck / high memory / profiling / "make it
-   faster"** → **PERFORMANCE FLOW** → run `/perf-hunt`.
-4. **Review a diff / PR / "is this safe to merge"** → **REVIEW FLOW** →
-   run `/review-diff`.
-5. **Feature / new behavior / refactor / "add" / "implement" / "change how X
-   works"** → **DEV FLOW** → run `/dev-flow`.
+Invoke the `dispatcher` subagent on `$ARGUMENTS`. The dispatcher
+returns a structured plan with: tier, pipeline, agents involved,
+agents skipped, escalation triggers, cost band, and the exact next
+command to run.
 
-If ambiguous, ask ONE clarifying question, then classify. If it is both a bug
-and a feature, prefer BUG AUDIT for the defect part and say so.
+If the dispatcher escalates the tier above the user's intuitive
+expectation, **trust the dispatcher** — escalation keywords (auth,
+schema, migration, payment, security, concurrency, cache, …) are
+non-negotiable.
+
+## Step 2 — Surface the plan
+
+Print the dispatcher's plan to the user verbatim, plus a single
+question line:
+
+```
+Proceed with this plan?  [y / escalate / abort / question]
+```
+
+- `y` → run the next step exactly as planned.
+- `escalate` → move up one tier (e.g. Tier 2b → Tier 3 `/dev-flow`,
+  Tier 3 → Tier 4 with forced architect + expert-council) and re-print
+  the new plan.
+- `abort` → stop. Do nothing else.
+- `question` → answer the user's question; do not execute the plan
+  until you re-confirm.
+
+## Step 3 — Execute the chosen next step
+
+Only after the user replies `y`:
+
+| Tier | Action |
+|---|---|
+| **0** | Answer inline using Read / Glob / Grep. No subagent. |
+| **1** | Invoke `repo-scout` on `$ARGUMENTS`. Return the briefing. Stop. |
+| **2a — quick-fix** | Run `/quick-fix` on `$ARGUMENTS`. |
+| **2b — quick-feature** | Run `/quick-feature` on `$ARGUMENTS`. |
+| **3 — dev** | Run `/dev-flow` on `$ARGUMENTS`. |
+| **3 — bug audit** | Run `/bug-audit` on `$ARGUMENTS`. (No fixing — invariant.) |
+| **3 — perf** | Run `/perf-hunt` on `$ARGUMENTS`. |
+| **3 — review** | Run `/review-diff`. |
+| **3 — bug fix approved** | Run `/bug-fix-approved` on `$ARGUMENTS`. |
+| **4 — escalated** | Run `/dev-flow` (or `/bug-audit`/`/perf-hunt`) and **force** the architect stage + expert-council stage on. |
 
 ## Hard rules
 
-- **Never fix a bug in the audit flow.** Audit produces evidence, root cause,
-  options and a recommendation — then stops for human approval.
-- Respect the model strategy: Haiku for scouting, Sonnet for
-  implement/test/hunt, Opus for architecture/root-cause/council/review.
-- Enforce scope discipline: no unrelated refactors; no API/schema/auth/
-  security/persistence semantic changes without explicit approval.
+- **Never run downstream agents before the user replies `y`.** Silent
+  routing destroys the value of having a plan.
+- **Bug audit never fixes.** Invariant from `/bug-audit`. The
+  dispatcher cannot route a Tier 4 bug into a fix path.
+- **Reviewer is never skipped** for any code change, regardless of
+  tier. The mini-commands `/quick-fix` and `/quick-feature` already
+  enforce this.
+- **Regression-guard is never skipped** for any bug fix.
+- Respect the model strategy: cheap for scouting/dispatcher, mid for
+  implement/test/hunt, premium for architecture/root-cause/council/review.
+- Enforce scope discipline: no unrelated refactors; no API / schema /
+  auth / security / persistence semantic changes without explicit
+  approval (Tier 4 + architect verdict).
 
-## Output
+## Notes for users skipping the plan
 
-1. **Classification:** `<FLOW>` — one-line reason.
-2. Then immediately execute the corresponding command on `$ARGUMENTS`.
+If your project's CLAUDE.md says "skip dispatcher for trivial questions"
+or similar, honour it — but only for Tier 0 questions. Anything that
+might touch code goes through the dispatcher first.
