@@ -146,7 +146,8 @@ before changing them (or back them up with `--backup`).
 - **`--dry-run`** performs zero writes and zero backups.
 - Backups are written next to the original as
   `&lt;file&gt;.backup-YYYYMMDD-HHMMSS` and never overwrite an existing backup.
-- Cross-platform (Windows/macOS/Linux), zero runtime dependencies, no
+- Cross-platform (Windows/macOS/Linux); a single runtime dependency
+  (`@inquirer/prompts` for the interactive model-tier prompt), no
   shell-specific behavior.
 
 ## Development
