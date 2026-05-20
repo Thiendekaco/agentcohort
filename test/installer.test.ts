@@ -73,6 +73,37 @@ describe('runInit - fresh project', () => {
     expect(installed).toContain(`model: ${DEFAULT_MODELS.cheap}`);
   });
 
+  it('installs the interoperability section before operating standard', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const claude = readFileSync(join(cwd, 'CLAUDE.md'), 'utf8');
+    const i = claude.indexOf('## Interoperability & precedence');
+    const j = claude.indexOf('## Operating standard');
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(-1);
+    expect(i).toBeLessThan(j);
+  });
+
+  it('installs the delimited boot directive at the top of every agent', async () => {
+    const cwd = project();
+    await runInit(baseOpts(cwd));
+    const agentDir = join(cwd, '.claude', 'agents');
+    const files = readdirSync(agentDir).filter((f) => f.endsWith('.md'));
+    expect(files.length).toBe(15);
+    for (const f of files) {
+      const text = readFileSync(join(agentDir, f), 'utf8');
+      const start = text.indexOf('<!-- boot-directive-start -->');
+      const end = text.indexOf('<!-- boot-directive-end -->');
+      const role = text.indexOf('# Role');
+      expect(start, `${f}: missing boot-directive-start`).toBeGreaterThan(-1);
+      expect(end, `${f}: missing boot-directive-end`).toBeGreaterThan(-1);
+      expect(role, `${f}: missing # Role`).toBeGreaterThan(-1);
+      // Directive sits between frontmatter and # Role.
+      expect(start).toBeLessThan(end);
+      expect(end).toBeLessThan(role);
+    }
+  });
+
   it('is idempotent: a second run reports everything unchanged', async () => {
     const cwd = project();
     await runInit(baseOpts(cwd));
@@ -239,7 +270,7 @@ describe('runInit - CLAUDE.md handling', () => {
     expect(after).toContain('keep me too');
     expect(after).toContain('# Other');
     expect(after).not.toContain('OLD RULES');
-    expect(after.match(/# Agentcohort Routing Rules/g)?.length).toBe(1);
+    expect(after.match(/^# Agentcohort Routing Rules\s*$/gm)?.length).toBe(1);
   });
 
   it('reports the section unchanged on a second run (idempotent)', async () => {

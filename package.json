@@ -43,7 +43,8 @@
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json && node scripts/copy-templates.mjs",
+    "sync-boot": "node scripts/sync-boot-directive.mjs",
+    "build": "npm run clean && npm run sync-boot && tsc -p tsconfig.json && node scripts/copy-templates.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build && npm test"
