@@ -59,6 +59,35 @@ sensitive work spends *more* (on purpose).
 > actual numbers. The dispatcher itself costs about one haiku call
 > (~$0.005) per request, included in the "with agentcohort" column.
 
+### Stacks with a memory layer (optional)
+
+If your project also runs [**OpenWolf**](https://github.com/cytostack/openwolf)
+(`npm i -g openwolf && openwolf init`), `agentcohort` agents detect
+its `.wolf/` directory and consult three of its memory files:
+
+- **`anatomy.md`** — file map with token estimates. Lets `repo-scout`
+  and the perf agents skip opening files whose description is enough.
+- **`cerebrum.md`** — recorded Do-Not-Repeat list + user preferences.
+  `feature-implementer`, `bug-fixer`, and `final-reviewer` block
+  changes that violate it.
+- **`buglog.json`** — past bug fixes. `bug-hunter` /
+  `root-cause-analyst` / `reproduction-engineer` check for matching
+  symptoms before re-investigating.
+
+OpenWolf alone reports ~65–80% token savings on real projects (per
+its own README). Combined with `agentcohort`'s pipeline right-sizing,
+the two layers cut different sources of waste — file-level redundancy
+(OpenWolf) and agent-level overkill (agentcohort) — so they compound.
+**Estimated combined savings: ~85% vs. the naïve baseline. Not
+benchmarked yet; treat as an upper bound, not a guarantee.**
+
+> **Licensing.** `agentcohort` itself remains **MIT**. We do not
+> bundle, copy, or link OpenWolf code — agents only *read text
+> files* OpenWolf writes to `.wolf/`. OpenWolf is **AGPL-3.0**;
+> if you install it, its license terms apply to OpenWolf, not to
+> agentcohort. Companies that cannot accept AGPL should skip the
+> OpenWolf install and use `agentcohort` standalone.
+
 ---
 
 ## Install
