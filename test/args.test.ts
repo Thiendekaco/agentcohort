@@ -71,4 +71,10 @@ describe('parseArgs - PR 2 additions', () => {
     const a = parseArgs(['init']);
     expect(a.reconfigure).toBe(false);
   });
+
+  it('parses --reconfigure and --force together (the rejection happens in cli, not parseArgs)', () => {
+    const a = parseArgs(['init', '--reconfigure', '--force']);
+    expect(a.reconfigure).toBe(true);
+    expect(a.force).toBe(true);
+  });
 });

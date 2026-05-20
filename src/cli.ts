@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { confirm } from '@inquirer/prompts';
+import { ExitPromptError } from '@inquirer/core';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
 import { promptModelStrategy } from './promptModels';
@@ -76,9 +77,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 1;
   }
 
-  if (args.reconfigure && args.yes) {
+  if (args.reconfigure && (args.yes || args.force)) {
     process.stderr.write(
-      paint('✗ --reconfigure requires interactive mode (cannot combine with --yes).\n', 'red')
+      paint('✗ --reconfigure requires interactive mode (cannot combine with --yes or --force).\n', 'red')
     );
     return 1;
   }
@@ -136,6 +137,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
     if (interactive && (existingConfig === null || args.reconfigure)) {
       const newModels = await promptModelStrategy(existingConfig?.models);
+      // Persist config BEFORE install so a partial install can be re-run idempotently.
       writeConfig(cwd, { version: 1, models: newModels });
       models = newModels;
     }
@@ -156,7 +158,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ExitPromptError') {
+    if (err instanceof ExitPromptError) {
       process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
       return 130;
     }
@@ -167,6 +169,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
+// Auto-run only when executed as the bin (not when imported by tests/tooling).
 if (require.main === module) {
   main()
     .then((code) => process.exit(code))
