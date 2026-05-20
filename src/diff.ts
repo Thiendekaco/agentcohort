@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ModelsConfig } from './config';
-import { TIER_ALIASES } from './defaults';
+import { TIER_ALIASES, type TierAlias } from './defaults';
 
 export interface ModelChange {
   file: string;
@@ -44,23 +44,26 @@ export function computeFrontmatterModelDiff(
     if (!file.endsWith('.md')) continue;
     const text = readFileSync(join(installedAgentDir, file), 'utf8');
     const m = text.match(/^model:[ \t]+(\S+)[ \t]*$/m);
-    if (!m) continue;
+    if (!m?.[1]) continue;
     const value = m[1];
 
-    let tier: keyof ModelsConfig | null = null;
-    let from: string;
+    let tier: keyof ModelsConfig | undefined;
+    let from: string = '';
     if (value === 'opus' || value === 'sonnet' || value === 'haiku') {
-      tier = TIER_ALIASES[value];
+      tier = TIER_ALIASES[value as TierAlias];
+      if (!tier) continue; // satisfy strict TS
       from = oldModels[tier];
-    } else if (oldById[value]) {
-      tier = oldById[value];
-      from = value;
     } else {
-      // hand-edited specific ID → skip
-      continue;
+      const tierFromId = oldById[value];
+      if (!tierFromId) {
+        // hand-edited specific ID → skip
+        continue;
+      }
+      tier = tierFromId as keyof ModelsConfig;
+      from = value as string;
     }
 
-    const to = newModels[tier];
+    const to = newModels[tier!];
     if (from !== to) {
       changes.push({ file, from, to });
     }
