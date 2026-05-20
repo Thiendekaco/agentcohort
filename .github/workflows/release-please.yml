@@ -6,6 +6,19 @@ name: Release-Please
 #     CHANGELOG entry, and manifest update.
 #  2. When that Release PR is merged, create a GitHub Release + git tag.
 #
+# Token: uses RELEASE_PAT (a Personal Access Token) instead of the
+# default GITHUB_TOKEN. This is REQUIRED so that the GitHub Release
+# created in step 2 fires the `release: published` event that
+# publish.yml listens for. GitHub deliberately suppresses downstream
+# workflow triggers when an event is produced by GITHUB_TOKEN, to
+# prevent workflow loops. Using a PAT bypasses that suppression.
+#
+# RELEASE_PAT must have these scopes (Classic token):
+#   - repo
+#   - workflow
+# Created at https://github.com/settings/tokens and stored as the
+# repository secret `RELEASE_PAT`.
+#
 # Does NOT publish to npm — that's handled by publish.yml on the
 # `release: published` event.
 
@@ -29,4 +42,4 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PAT }}
