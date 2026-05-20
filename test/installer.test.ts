@@ -222,7 +222,7 @@ describe('runInit - CLAUDE.md handling', () => {
     expect(after).toContain('keep me too');
     expect(after).toContain('# Other');
     expect(after).not.toContain('OLD RULES');
-    expect(after.match(/# Agentcohort Routing Rules/g)?.length).toBe(1);
+    expect(after.match(/^# Agentcohort Routing Rules\s*$/gm)?.length).toBe(1);
   });
 
   it('reports the section unchanged on a second run (idempotent)', async () => {
