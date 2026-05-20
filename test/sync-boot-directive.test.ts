@@ -14,10 +14,6 @@ function workspace(): { root: string; directivePath: string; agentDir: string } 
   const directivePath = join(root, '_boot-directive.md');
   return { root, directivePath, agentDir };
 }
-afterEach(() => {
-  while (tmps.length) rmSync(tmps.pop()!, { recursive: true, force: true });
-});
-
 const DIRECTIVE = `<!-- boot-directive-start -->
 
 # Boot directive — read before acting
@@ -39,6 +35,10 @@ You are a test agent.
 `;
 
 describe('syncBootDirective', () => {
+  afterEach(() => {
+    while (tmps.length) rmSync(tmps.pop()!, { recursive: true, force: true });
+  });
+
   it('inserts directive after frontmatter when not present', () => {
     const ws = workspace();
     writeFileSync(ws.directivePath, DIRECTIVE);
@@ -51,12 +51,15 @@ describe('syncBootDirective', () => {
     expect(out).toContain('<!-- boot-directive-start -->');
     expect(out).toContain('<!-- boot-directive-end -->');
     expect(out).toContain('Stub directive body.');
-    // Order: frontmatter, then directive, then # Role
-    const idxFrontEnd = out.indexOf('---', 4) + 3;
+    // Order: frontmatter (closing ---), then a separator newline, then
+    // directive, then # Role
+    const closingDashesIdx = out.indexOf('---', 4);
     const idxStart = out.indexOf('<!-- boot-directive-start -->');
     const idxEnd = out.indexOf('<!-- boot-directive-end -->');
     const idxRole = out.indexOf('# Role');
-    expect(idxFrontEnd).toBeLessThan(idxStart);
+    expect(closingDashesIdx).toBeGreaterThan(-1);
+    expect(idxStart).toBeGreaterThan(closingDashesIdx + 3);
+    expect(out.slice(closingDashesIdx + 3, idxStart)).toMatch(/\n\s*\n/);
     expect(idxStart).toBeLessThan(idxEnd);
     expect(idxEnd).toBeLessThan(idxRole);
   });
