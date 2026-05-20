@@ -93,6 +93,20 @@ production-grade correctness, no shallow fixes, no fixing without evidence, and
 **a bug audit never fixes** — it produces a recommendation and stops at a human
 approval gate.
 
+### How agents respect your CLAUDE.md and skills
+
+Every installed agent boots by reading your project's `CLAUDE.md`
+content **outside** the `# Agentcohort Routing Rules` section and by
+checking for installed skills that match the current task. The rules:
+
+- Your project rules take precedence over an agent's default prompt.
+- An agent invokes a matching skill instead of re-implementing it.
+- Agentcohort's defaults apply only where your project is silent.
+
+This means `agentcohort` slots into a project that already has its own
+CLAUDE.md and skills (e.g. `superpowers`) — it does not override what
+you've already set up.
+
 ## Using the workflow commands (inside Claude Code)
 
 | Command | Pipeline | Use it for |
