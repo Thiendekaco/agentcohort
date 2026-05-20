@@ -5,3 +5,7 @@ dist/
 coverage/
 .idea/
 .claude/settings.local.json
+
+# Spec & plan docs live locally as personal notes; not part of the
+# shipped package.
+docs/superpowers/
