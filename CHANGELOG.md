@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/Thiendekaco/agentcohort/compare/v0.3.1...v0.4.0) (2026-05-20)
+
+
+### Features
+
+* OpenWolf interop + human review gates + doctor (v0.4.0) ([#18](https://github.com/Thiendekaco/agentcohort/issues/18)) ([ce0ed27](https://github.com/Thiendekaco/agentcohort/commit/ce0ed2793d090d4b2926cd5b195035dcd982b7aa))
+
 ## [0.3.1](https://github.com/Thiendekaco/agentcohort/compare/v0.3.0...v0.3.1) (2026-05-20)
 
 
