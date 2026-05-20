@@ -157,27 +157,36 @@ npm run build      # tsc -> dist/, then copies templates
 npm test           # vitest
 ```
 
-## Releases
+## Branching & releases
 
-Publishing is automated. **The version in `package.json` is the version that
-gets published.** Every push to `main` runs the
-[`Release`](.github/workflows/release.yml) workflow, which:
+Two long-lived branches:
+
+- **`dev`** — integration / staging. All feature PRs target `dev`. Nothing
+  here publishes to npm; this is the place to bundle PRs together, run
+  manual smoke tests, and verify the release as a whole.
+- **`main`** — production. Only ever updated by merging `dev` → `main`.
+  Every push to `main` triggers the [`Release`](.github/workflows/release.yml)
+  workflow.
+
+The workflow does:
 
 1. installs, builds and runs the full test suite;
 2. publishes the **current** `package.json` version to npm —
    https://www.npmjs.com/package/agentcohort (so the very first
-   release is exactly `0.1.0`, nothing skipped);
+   release was exactly `0.1.0`, nothing skipped);
 3. creates the annotated git tag `vX.Y.Z` on the published commit;
 4. bumps to the next dev version (`patch` by default) and pushes a
    `chore(release): published vX.Y.Z, open vX.Y.(Z+1) [skip ci]` commit back
    to `main`.
 
-So: to cut a normal release, just push to `main`. To release a `minor`/`major`
-instead, bump `package.json` yourself in a regular commit before pushing (or
-use the *Run workflow* button to control how the **next** pending version is
-opened). If the pending version is already on npm, publish is skipped and the
-job still succeeds (safe re-runs). The `[skip ci]` marker stops the release
-commit from re-triggering the workflow (no publish loop).
+So the normal release cycle is: open PR → `dev` → review & merge → smoke
+test on `dev` → open PR `dev` → `main` → merge → workflow publishes. To
+ship a `minor`/`major` instead of `patch`, bump `package.json` yourself
+in the PR before merging (or use the *Run workflow* button to control
+how the **next** pending version is opened). If the pending version is
+already on npm, publish is skipped and the job still succeeds (safe
+re-runs). The `[skip ci]` marker stops the release commit from
+re-triggering the workflow (no publish loop).
 
 **One-time setup:** add an npm **Automation** access token as the repository
 secret `NPM_TOKEN` (GitHub → Settings → Secrets and variables → Actions →
