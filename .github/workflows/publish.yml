@@ -1,0 +1,93 @@
+name: Publish
+
+# Fires when release-please.yml has just created a GitHub Release.
+# Two jobs:
+#   - publish: npm publish the tagged version
+#   - sync-dev: fast-forward dev to main (auto-resolves the expected
+#     conflicts on the 4 release-managed files; fails loudly on any
+#     other conflict)
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  sync-dev:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main into dev (auto-resolve known conflicts)
+        run: |
+          set -e
+          git fetch origin main
+          # Attempt the merge; ignore non-zero exit so we can inspect conflicts.
+          git merge origin/main --no-edit || true
+          UNMERGED="$(git ls-files -u)"
+          if [ -n "$UNMERGED" ]; then
+            # Auto-resolve only the 4 release-managed files by taking main's side.
+            git checkout --theirs \
+              package.json \
+              package-lock.json \
+              CHANGELOG.md \
+              .release-please-manifest.json 2>/dev/null || true
+            git add \
+              package.json \
+              package-lock.json \
+              CHANGELOG.md \
+              .release-please-manifest.json 2>/dev/null || true
+            STILL_UNMERGED="$(git ls-files -u)"
+            if [ -n "$STILL_UNMERGED" ]; then
+              echo "::error::sync-dev: unexpected merge conflict in non-release-managed files:"
+              echo "$STILL_UNMERGED"
+              exit 1
+            fi
+            git commit --no-edit
+          fi
+
+      - name: Push dev
+        run: git push origin dev
