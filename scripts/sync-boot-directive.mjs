@@ -26,7 +26,7 @@ const END = '<!-- boot-directive-end -->';
 function splitFrontmatter(text) {
   if (!text.startsWith('---')) return { frontmatter: '', body: text };
   // Find closing --- on its own line.
-  const re = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n/;
+  const re = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n/;
   const m = text.match(re);
   if (!m) return { frontmatter: '', body: text };
   const end = m[0].length;
@@ -57,6 +57,10 @@ function escapeRe(s) {
  * @returns {{ updated: string[], unchanged: string[] }}
  */
 export function syncBootDirective(opts) {
+  if (!existsSync(opts.agentDir)) {
+    throw new Error(`sync-boot-directive: agent dir not found: ${opts.agentDir}`);
+  }
+
   const directive = readFileSync(opts.directivePath, 'utf8').trimEnd() + '\n';
   if (!directive.startsWith(START) || !directive.trimEnd().endsWith(END)) {
     throw new Error(
@@ -67,19 +71,16 @@ export function syncBootDirective(opts) {
   const updated = [];
   const unchanged = [];
 
-  if (!existsSync(opts.agentDir)) {
-    throw new Error(`sync-boot-directive: agent dir not found: ${opts.agentDir}`);
-  }
-
   for (const file of readdirSync(opts.agentDir).sort()) {
     if (!file.endsWith('.md')) continue;
     const path = join(opts.agentDir, file);
     const original = readFileSync(path, 'utf8');
     const { frontmatter, body } = splitFrontmatter(original);
-    const stripped = stripExistingRegion(body).replace(/^\n+/, '');
+    const stripped = stripExistingRegion(body).replace(/^[\r\n]+/, '');
     const fm = frontmatter || '';
     const fmTail = fm && !fm.endsWith('\n') ? '\n' : '';
-    const next = `${fm}${fmTail}\n${directive}\n${stripped}`;
+    const sep = fm ? '\n' : '';
+    const next = `${fm}${fmTail}${sep}${directive}\n${stripped}`;
     if (next === original) {
       unchanged.push(file);
     } else {

@@ -158,4 +158,60 @@ This must survive the sync.
     const notes = readFileSync(join(ws.agentDir, 'notes.txt'), 'utf8');
     expect(notes).toBe('should be ignored');
   });
+
+  it('handles agent files with CRLF line endings', () => {
+    const ws = workspace();
+    writeFileSync(ws.directivePath, DIRECTIVE);
+    const agentPath = join(ws.agentDir, 'a.md');
+    const crlf = AGENT_NO_DIRECTIVE.replace(/\n/g, '\r\n');
+    writeFileSync(agentPath, crlf);
+
+    syncBootDirective({ directivePath: ws.directivePath, agentDir: ws.agentDir });
+
+    const out = readFileSync(agentPath, 'utf8');
+    expect(out).toContain('<!-- boot-directive-start -->');
+    expect(out).toContain('# Role');
+    // Directive sits between the frontmatter and # Role
+    const idxStart = out.indexOf('<!-- boot-directive-start -->');
+    const idxRole = out.indexOf('# Role');
+    const closingDashes = out.indexOf('---', 4);
+    expect(closingDashes).toBeGreaterThan(-1);
+    expect(idxStart).toBeGreaterThan(closingDashes);
+    expect(idxStart).toBeLessThan(idxRole);
+
+    // And it must be idempotent on CRLF files too
+    const after1 = readFileSync(agentPath, 'utf8');
+    syncBootDirective({ directivePath: ws.directivePath, agentDir: ws.agentDir });
+    const after2 = readFileSync(agentPath, 'utf8');
+    expect(after2).toBe(after1);
+  });
+
+  it('handles agent files without YAML frontmatter', () => {
+    const ws = workspace();
+    writeFileSync(ws.directivePath, DIRECTIVE);
+    const agentPath = join(ws.agentDir, 'plain.md');
+    const noFrontmatter = `# Role\n\nA plain agent without frontmatter.\n`;
+    writeFileSync(agentPath, noFrontmatter);
+
+    syncBootDirective({ directivePath: ws.directivePath, agentDir: ws.agentDir });
+
+    const out = readFileSync(agentPath, 'utf8');
+    // No leading blank line.
+    expect(out.startsWith('\n')).toBe(false);
+    expect(out.startsWith('<!-- boot-directive-start -->')).toBe(true);
+    expect(out).toContain('# Role');
+    // Idempotent
+    syncBootDirective({ directivePath: ws.directivePath, agentDir: ws.agentDir });
+    const out2 = readFileSync(agentPath, 'utf8');
+    expect(out2).toBe(out);
+  });
+
+  it('throws a structured error when agentDir does not exist', () => {
+    const ws = workspace();
+    writeFileSync(ws.directivePath, DIRECTIVE);
+    const missing = join(ws.root, 'does-not-exist');
+    expect(() =>
+      syncBootDirective({ directivePath: ws.directivePath, agentDir: missing })
+    ).toThrow(/agent dir not found/);
+  });
 });
