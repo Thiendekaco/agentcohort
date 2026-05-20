@@ -16,13 +16,26 @@ any stage raises a blocker.
    (touches module boundaries, public API, data model/schema, auth,
    concurrency, caching, or cross-cutting behavior). Otherwise skip and say
    why it was skipped.
-3. **feature-planner** — produce the bite-sized, test-first implementation
+3. **🚦 HUMAN GATE — architect** (only if step 2 ran). Read
+   `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
+   `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
+   STOP and surface the architect's decision (chosen approach + key
+   trade-offs + risks) for user review. Wait for:
+   - `y` → continue to step 4.
+   - `revise <feedback>` → re-run architect with the feedback.
+   - `abort` → stop the pipeline.
+   If `off`, skip this gate and continue immediately.
+4. **feature-planner** — produce the bite-sized, test-first implementation
    checklist with exact files and verification.
-4. **feature-implementer** — execute the plan; minimal change; focused tests;
+5. **🚦 HUMAN GATE — plan**. Read `.agentcohort.json` for `gates.plan`
+   (default `on`). If `on`, OR `auto` AND Tier ≥ 4, STOP and surface the
+   plan (files to touch, tests to add, verification commands) for user
+   review. Same reply contract as the architect gate.
+6. **feature-implementer** — execute the plan; minimal change; focused tests;
    targeted verification; no scope creep.
-5. **test-verifier** — add/run tests, typecheck, lint; fix only breakages
+7. **test-verifier** — add/run tests, typecheck, lint; fix only breakages
    caused by this change; report real output.
-6. **final-reviewer** — review the actual diff: correctness, regression,
+8. **final-reviewer** — review the actual diff: correctness, regression,
    scope creep, security, data consistency, missing tests. Verdict required.
 
 ## Rules
