@@ -36,14 +36,43 @@ your project's setup. They apply to every agent and every workflow.
 - Every important fix needs a **regression test** and a **review**.
 - Always report uncertainty, assumptions, and risk explicitly.
 
+## Tiered routing (smart dispatcher)
+
+`/auto-flow` is the **default entry point**. It runs the cheap
+`dispatcher` agent first to classify the task into a tier and print
+an execution plan; nothing else runs until the user replies `y`.
+
+| Tier | When | Pipeline |
+|---|---|---|
+| **0** | Pure question / lookup ("where is X", "what does Y do") | Direct answer, no subagent |
+| **1** | Read-only recon / trace flow | `repo-scout` only |
+| **2a** | Small bug fix, root cause already known | `/quick-fix` (fixer → guard → test → reviewer) |
+| **2b** | Small feature, 1–3 local files, no API/schema/auth | `/quick-feature` (scout → implementer → test → reviewer) |
+| **3**  | Feature, refactor, unknown bug, perf | `/dev-flow` / `/bug-audit` / `/perf-hunt` |
+| **4**  | Escalation keyword matched or architecture-sensitive | Full pipeline + architect + expert-council forced on |
+
+**Escalation keywords** (force tier ≥ 3, prefer 4): `auth`, `login`,
+`session`, `token`, `password`, `oauth`, `sso`, `schema`, `migration`,
+`prisma`, `database`, `sql`, `api contract`, `public api`,
+`breaking change`, `payment`, `billing`, `money`, `currency`, `balance`,
+`security`, `secret`, `credential`, `cors`, `csrf`, `blockchain`,
+`wallet`, `signature`, `private key`, `concurrency`, `race condition`,
+`lock`, `mutex`, `transaction`, `cache`, `invalidation`, `ttl`.
+
+Uncertainty escalates **up**, never down. The user can override with
+`escalate` / `abort` / `question` instead of `y`.
+
 ## Workflow selection
 
-Run `/auto-flow` when unsure — it classifies and routes. Otherwise:
+Run `/auto-flow` when unsure — it dispatches and routes. To invoke a
+specific pipeline directly:
 
 | Situation | Command | Pipeline |
 |---|---|---|
 | Feature / refactor / new behavior | `/dev-flow` | scout → architect* → planner → implementer → test-verifier → final-reviewer |
+| Small feature, 1–3 files, no API/schema/auth | `/quick-feature` | scout → implementer → test-verifier → final-reviewer |
 | Bug / crash / regression / bad data / security / stability | `/bug-audit` | bug-hunter → root-cause-analyst → reproduction-engineer → expert-council |
+| Small bug fix, root cause already known | `/quick-fix` | bug-fixer → regression-guard → test-verifier → final-reviewer |
 | A specific fix was **human-approved** | `/bug-fix-approved` | bug-fixer → regression-guard → test-verifier → final-reviewer |
 | Slow / bottleneck / profiling | `/perf-hunt` | performance-hunter → architect* → perf-optimizer → test-verifier → perf-reviewer |
 | Review a diff / PR | `/review-diff` | final-reviewer |
