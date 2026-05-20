@@ -6,6 +6,7 @@ export interface ParsedArgs {
   dryRun: boolean;
   force: boolean;
   backup: boolean;
+  reconfigure: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -17,6 +18,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--dry-run': 'dryRun',
   '--force': 'force',
   '--backup': 'backup',
+  '--reconfigure': 'reconfigure',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -31,6 +33,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     dryRun: false,
     force: false,
     backup: false,
+    reconfigure: false,
     help: false,
     version: false,
     unknown: [],
@@ -63,6 +66,9 @@ ${b('USAGE')}
 ${b('COMMANDS')}
   init                 Install agents, workflow commands and routing rules
                        into ./.claude and ./CLAUDE.md of the current project.
+  config               Re-prompt the model-tier strategy, show a diff of
+                       any pending changes to installed agents, and apply
+                       them with confirmation.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -74,6 +80,9 @@ ${b('OPTIONS')}
                        section without prompting (no backup unless --backup).
   --backup             Always back up a file before overwriting it.
                        Backup name: <file>.backup-YYYYMMDD-HHMMSS
+  --reconfigure        (init only) Re-prompt model-tier strategy even if a
+                       .agentcohort.json already exists. Requires a TTY;
+                       not compatible with --yes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 
@@ -82,6 +91,7 @@ ${b('WHAT GETS INSTALLED')}
                        reviewer, bug-hunter, root-cause-analyst, ...).
   .claude/commands/    7 workflow commands.
   CLAUDE.md            Appends a "# Agentcohort Routing Rules" section.
+  .agentcohort.json    (Only when user customizes model-tier strategy.)
 
 ${b('WORKFLOW COMMANDS (run inside Claude Code)')}
   /auto-flow           Classify the task and pick the right workflow.

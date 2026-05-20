@@ -1,6 +1,10 @@
 #!/usr/bin/env node
+import { confirm } from '@inquirer/prompts';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
+import { promptModelStrategy } from './promptModels';
+import { runConfigCmd } from './configCmd';
+import { loadConfig, writeConfig, resolveModels } from './config';
 import { createLogger, paint } from './logger';
 import { getVersion } from './paths';
 import { parseArgs, helpText } from './args';
@@ -66,9 +70,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 0;
   }
 
-  if (args.command !== 'init') {
+  if (args.command !== 'init' && args.command !== 'config') {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
+    return 1;
+  }
+
+  if (args.reconfigure && args.yes) {
+    process.stderr.write(
+      paint('✗ --reconfigure requires interactive mode (cannot combine with --yes).\n', 'red')
+    );
     return 1;
   }
 
@@ -92,9 +103,46 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   try {
+    const cwd = process.cwd();
+
+    if (args.command === 'config') {
+      if (!interactive) {
+        process.stderr.write(
+          paint(
+            '✗ `agentcohort config` requires interactive mode (TTY). Edit .agentcohort.json directly to set models non-interactively.\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+      const result = await runConfigCmd({
+        cwd,
+        promptModelStrategy,
+        confirm: (message) => confirm({ message, default: true }),
+      });
+      const msg = {
+        'no-changes': 'No changes. Configuration is up to date.',
+        'no-agents': 'Config saved. No installed agents found — run `agentcohort init` to install.',
+        'cancelled': 'Cancelled. No changes made.',
+        'applied': `Applied ${result.changes.length} change(s) to installed agents.`,
+      }[result.status];
+      process.stdout.write(`${paint('•', 'cyan')} ${msg}\n`);
+      return 0;
+    }
+
+    // command === 'init'
+    let existingConfig = loadConfig(cwd);
+    let models = resolveModels(existingConfig);
+
+    if (interactive && (existingConfig === null || args.reconfigure)) {
+      const newModels = await promptModelStrategy(existingConfig?.models);
+      writeConfig(cwd, { version: 1, models: newModels });
+      models = newModels;
+    }
+
     if (interactive) resolverHandle = createInteractiveResolver();
     const result = await runInit({
-      cwd: process.cwd(),
+      cwd,
       yes: args.yes,
       dryRun: args.dryRun,
       force: args.force,
@@ -102,11 +150,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       interactive,
       resolver: resolverHandle?.resolve,
       logger,
+      models,
     });
     printSummary(result);
     return 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ExitPromptError') {
+      process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+      return 130;
+    }
     process.stderr.write(paint(`\n✗ ${message}\n`, 'red'));
     return 1;
   } finally {
@@ -114,7 +167,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
-// Auto-run only when executed as the bin (not when imported by tests/tooling).
 if (require.main === module) {
   main()
     .then((code) => process.exit(code))
