@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { ExitPromptError } from '@inquirer/core';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
@@ -7,6 +7,16 @@ import { promptModelStrategy } from './promptModels';
 import { promptGates } from './promptGates';
 import { runConfigCmd } from './configCmd';
 import { runDoctor, DoctorReport, Severity } from './doctor';
+import { runLint, LintReport, LintSeverity } from './lint';
+import { runStatus, StatusReport } from './status';
+import {
+  runUpgrade,
+  UpgradeAction,
+  UpgradeConflictRequest,
+  UpgradeConflictDecision,
+  UpgradeResult,
+} from './upgrade';
+import { unifiedDiff } from './textDiff';
 import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getTemplatesDir, getVersion } from './paths';
@@ -76,7 +86,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   if (
     args.command !== 'init' &&
     args.command !== 'config' &&
-    args.command !== 'doctor'
+    args.command !== 'doctor' &&
+    args.command !== 'lint' &&
+    args.command !== 'status' &&
+    args.command !== 'upgrade'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -99,6 +112,98 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ doctor: ${message}\n`, 'red'));
       return 2;
+    }
+  }
+
+  if (args.command === 'lint') {
+    try {
+      const report = runLint({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatLintReport(report));
+      }
+      return report.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ lint: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'status') {
+    try {
+      const report = runStatus({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatStatusReport(report));
+      }
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ status: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'upgrade') {
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    const cwd = process.cwd();
+
+    // Read existing config silently — upgrade never re-prompts for it.
+    const existingConfig = loadConfig(cwd);
+    const models = resolveModels(existingConfig);
+
+    process.stdout.write(
+      paint('\nagentcohort upgrade', 'bold', 'cyan') +
+        paint(`  v${getVersion()}\n`, 'gray')
+    );
+    if (args.dryRun) {
+      process.stdout.write(paint('Dry run — no files will be written.\n', 'gray'));
+    } else if (!interactive && !args.yes && !args.force) {
+      process.stdout.write(
+        paint(
+          'Non-interactive — conflicts will keep the local version (safe default).\n',
+          'gray'
+        )
+      );
+    }
+
+    try {
+      const logger = createLogger();
+      const result = await runUpgrade({
+        cwd,
+        dryRun: args.dryRun,
+        force: args.force,
+        backup: args.backup,
+        interactive,
+        models,
+        resolver: interactive
+          ? (req) => upgradeResolver(req, { showDiff: args.diff })
+          : undefined,
+        logger,
+      });
+      if (args.diff) printVerboseDiffs(result);
+      printUpgradeSummary(result);
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No more changes will be applied.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`\n✗ upgrade: ${message}\n`, 'red'));
+      return 1;
     }
   }
 
@@ -239,6 +344,218 @@ function formatDoctorReport(report: DoctorReport): string {
   }[report.summary];
   out.push(summaryLine);
   return out.join('\n') + '\n';
+}
+
+function formatLintReport(report: LintReport): string {
+  const SEVERITY_GLYPH: Record<LintSeverity, string> = {
+    ok: paint('✓', 'green'),
+    warn: paint('⚠', 'yellow'),
+    error: paint('✗', 'red'),
+  };
+  const out: string[] = [];
+  out.push(paint('\nAgentcohort Lint', 'bold', 'cyan'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  for (const section of report.sections) {
+    out.push(paint(`${section.name}:`, 'bold'));
+    for (const check of section.checks) {
+      out.push(`  ${SEVERITY_GLYPH[check.severity]} ${check.message}`);
+      for (const d of check.detail ?? []) {
+        out.push(paint(`      └─ ${d}`, 'gray'));
+      }
+    }
+    out.push('');
+  }
+
+  const summaryLine = {
+    clean: paint('Summary: Clean.', 'green'),
+    issues: paint('Summary: Issues found — review the items above.', 'yellow'),
+  }[report.summary];
+  out.push(summaryLine);
+  return out.join('\n') + '\n';
+}
+
+function formatStatusReport(report: StatusReport): string {
+  const out: string[] = [];
+  out.push(paint(`\nagentcohort`, 'bold', 'cyan') + paint(` v${report.version}`, 'gray'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  // Install
+  const a = report.install.agents;
+  const c = report.install.commands;
+  const agentLine = `${a.installed} installed (${a.bundled} bundled)`;
+  const cmdLine = `${c.installed} installed (${c.bundled} bundled)`;
+  const claudeMdLabel = {
+    present: paint('routing section present', 'green'),
+    missing: paint('not found', 'red'),
+    'no-routing-section': paint('present but no routing section', 'yellow'),
+  }[report.install.claudeMd];
+  const configLabel =
+    report.install.config === 'present'
+      ? '.agentcohort.json (custom)'
+      : paint('defaults', 'gray');
+  const openWolfLabel =
+    report.install.openWolf === 'active'
+      ? paint('active (.wolf/ found)', 'green')
+      : paint('not active', 'gray');
+
+  out.push(paint('Install:', 'bold'));
+  out.push(`  ${pad('Agents:', 18)} ${agentLine}`);
+  out.push(`  ${pad('Commands:', 18)} ${cmdLine}`);
+  out.push(`  ${pad('CLAUDE.md:', 18)} ${claudeMdLabel}`);
+  out.push(`  ${pad('Config:', 18)} ${configLabel}`);
+  out.push(`  ${pad('OpenWolf:', 18)} ${openWolfLabel}`);
+  out.push('');
+
+  // Models
+  out.push(
+    paint('Models', 'bold') +
+      (report.modelsSource === 'defaults' ? paint(' (defaults):', 'gray') : ':')
+  );
+  out.push(`  ${pad('premium:', 18)} ${report.models.premium}`);
+  out.push(`  ${pad('mid:', 18)} ${report.models.mid}`);
+  out.push(`  ${pad('cheap:', 18)} ${report.models.cheap}`);
+  out.push('');
+
+  // Gates
+  out.push(
+    paint('Gates', 'bold') +
+      (report.gatesSource === 'defaults' ? paint(' (defaults):', 'gray') : ':')
+  );
+  for (const [name, mode] of Object.entries(report.gates)) {
+    const modeColor =
+      mode === 'on' ? 'green' : mode === 'off' ? 'gray' : 'yellow';
+    out.push(`  ${pad(name + ':', 18)} ${paint(mode, modeColor)}`);
+  }
+  out.push('');
+
+  // Planned
+  if (report.planned.length > 0) {
+    out.push(paint('Coming in future versions', 'bold', 'gray'));
+    for (const f of report.planned) {
+      out.push(
+        paint(
+          `  ${pad(f.target, 8)} ${pad(f.name, 26)} ${f.blurb}`,
+          'gray'
+        )
+      );
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
+function pad(s: string, width: number): string {
+  return s.length >= width ? s : s + ' '.repeat(width - s.length);
+}
+
+async function upgradeResolver(
+  req: UpgradeConflictRequest,
+  opts: { showDiff: boolean }
+): Promise<UpgradeConflictDecision> {
+  process.stdout.write('\n');
+  const reasonLabel = {
+    'user-edited': 'edited locally',
+    unstamped: 'pre-0.4.0 install (no integrity stamp)',
+    'section-edited': 'CLAUDE.md routing section edited',
+  }[req.reason];
+  process.stdout.write(
+    paint(`Conflict: ${req.targetRelPath}  `, 'bold') +
+      paint(`(${reasonLabel})\n`, 'yellow')
+  );
+  if (opts.showDiff) {
+    process.stdout.write(
+      unifiedDiff(req.oldText, req.newText, {
+        oldLabel: `${req.targetRelPath} (your version)`,
+        newLabel: `${req.targetRelPath} (bundled)`,
+      })
+    );
+  }
+
+  while (true) {
+    const choice = await select<'keep' | 'overwrite' | 'backup-overwrite' | 'diff'>({
+      message: `What to do with ${req.targetRelPath}?`,
+      choices: [
+        { name: 'Keep my version', value: 'keep' },
+        { name: 'Overwrite with bundled', value: 'overwrite' },
+        { name: 'Backup + overwrite (recommended)', value: 'backup-overwrite' },
+        { name: 'Show diff', value: 'diff' },
+      ],
+      default: 'keep',
+    });
+    if (choice === 'diff') {
+      process.stdout.write(
+        unifiedDiff(req.oldText, req.newText, {
+          oldLabel: `${req.targetRelPath} (your version)`,
+          newLabel: `${req.targetRelPath} (bundled)`,
+        })
+      );
+      continue;
+    }
+    const applyToAll = await confirm({
+      message: 'Apply this choice to all remaining conflicts?',
+      default: false,
+    });
+    return { choice, applyToAll };
+  }
+}
+
+function printVerboseDiffs(result: UpgradeResult): void {
+  const interesting: UpgradeAction[] = result.actions.filter(
+    (a) =>
+      a.oldText !== undefined &&
+      a.newText !== undefined &&
+      (a.disposition === 'refreshed' ||
+        a.disposition === 'overwritten' ||
+        a.disposition === 'backed-up-and-overwritten' ||
+        a.disposition === 'kept' ||
+        a.disposition === 'section-replaced' ||
+        a.disposition === 'section-kept')
+  );
+  if (interesting.length === 0) return;
+  process.stdout.write(paint('\n── Diffs ──\n', 'bold'));
+  for (const a of interesting) {
+    process.stdout.write(
+      paint(`\n[${a.disposition}] ${a.targetRelPath}\n`, 'cyan')
+    );
+    const diff = unifiedDiff(a.oldText!, a.newText!, {
+      oldLabel: `${a.targetRelPath} (current)`,
+      newLabel: `${a.targetRelPath} (bundled)`,
+    });
+    process.stdout.write(diff || paint('  (no textual change)\n', 'gray'));
+  }
+}
+
+function printUpgradeSummary(result: UpgradeResult): void {
+  const counts = new Map<string, number>();
+  for (const a of result.actions) {
+    counts.set(a.disposition, (counts.get(a.disposition) ?? 0) + 1);
+  }
+  const part = (label: string, key: string): string | null => {
+    const n = counts.get(key) ?? 0;
+    return n > 0 ? `${n} ${label}` : null;
+  };
+  const segments = [
+    part('refreshed', 'refreshed'),
+    part('created', 'created'),
+    part('overwritten', 'overwritten'),
+    part('overwritten w/ backup', 'backed-up-and-overwritten'),
+    part('kept local', 'kept'),
+    part('section-replaced', 'section-replaced'),
+    part('section-kept', 'section-kept'),
+    part('unchanged', 'unchanged'),
+    part('section-unchanged', 'section-unchanged'),
+  ].filter((x): x is string => x !== null);
+
+  process.stdout.write('\n');
+  const head = result.dryRun ? 'Dry run complete' : 'Upgrade complete';
+  process.stdout.write(
+    `${paint(head, 'bold', 'green')}  ${segments.join(' · ') || 'nothing to do'}\n`
+  );
+  if (result.dryRun) {
+    process.stdout.write(
+      `${paint('•', 'cyan')} Re-run without ${paint('--dry-run', 'bold')} to apply.\n`
+    );
+  }
 }
 
 // Auto-run only when executed as the bin (not when imported by tests/tooling).

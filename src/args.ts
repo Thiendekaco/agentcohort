@@ -8,6 +8,7 @@ export interface ParsedArgs {
   backup: boolean;
   reconfigure: boolean;
   json: boolean;
+  diff: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -21,6 +22,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--backup': 'backup',
   '--reconfigure': 'reconfigure',
   '--json': 'json',
+  '--diff': 'diff',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -37,6 +39,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     backup: false,
     reconfigure: false,
     json: false,
+    diff: false,
     help: false,
     version: false,
     unknown: [],
@@ -76,6 +79,20 @@ ${b('COMMANDS')}
                        intact, the config is valid, and no installed file
                        has drifted from the bundled template. Exits 0 when
                        healthy, 1 on any warning/error.
+  lint                 Read-only content-quality check: validates agent
+                       frontmatter, boot-directive presence, model tier
+                       references, and slash-command references in
+                       CLAUDE.md. Complements doctor — doctor checks
+                       structure, lint checks content. Exits 0 on clean.
+  status               At-a-glance read-only report: version, agent /
+                       command counts, CLAUDE.md routing presence,
+                       resolved model tiers + gate modes, OpenWolf
+                       activity, and planned upcoming features.
+  upgrade              Sync the project's .claude/ templates and CLAUDE.md
+                       routing section to the bundled version. Refreshes
+                       outdated files automatically and prompts before
+                       overwriting any file the user has edited locally.
+                       Preserves .agentcohort.json (models + gates).
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -90,7 +107,10 @@ ${b('OPTIONS')}
   --reconfigure        (init only) Re-prompt model-tier strategy even if a
                        .agentcohort.json already exists. Requires a TTY;
                        not compatible with --yes.
-  --json               (doctor only) Emit the diagnostic report as JSON
+  --diff               (upgrade only) Print the unified diff of every
+                       file that would be refreshed or overwritten, in
+                       addition to the per-conflict prompt's diff view.
+  --json               (doctor, lint, status) Emit the report as JSON
                        instead of human-readable text. Exit code is the
                        same in both modes.
   --help, -h           Show this help.
