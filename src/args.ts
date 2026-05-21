@@ -8,6 +8,7 @@ export interface ParsedArgs {
   backup: boolean;
   reconfigure: boolean;
   json: boolean;
+  diff: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -21,6 +22,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--backup': 'backup',
   '--reconfigure': 'reconfigure',
   '--json': 'json',
+  '--diff': 'diff',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -37,6 +39,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     backup: false,
     reconfigure: false,
     json: false,
+    diff: false,
     help: false,
     version: false,
     unknown: [],
@@ -85,6 +88,11 @@ ${b('COMMANDS')}
                        command counts, CLAUDE.md routing presence,
                        resolved model tiers + gate modes, OpenWolf
                        activity, and planned upcoming features.
+  upgrade              Sync the project's .claude/ templates and CLAUDE.md
+                       routing section to the bundled version. Refreshes
+                       outdated files automatically and prompts before
+                       overwriting any file the user has edited locally.
+                       Preserves .agentcohort.json (models + gates).
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -99,6 +107,9 @@ ${b('OPTIONS')}
   --reconfigure        (init only) Re-prompt model-tier strategy even if a
                        .agentcohort.json already exists. Requires a TTY;
                        not compatible with --yes.
+  --diff               (upgrade only) Print the unified diff of every
+                       file that would be refreshed or overwritten, in
+                       addition to the per-conflict prompt's diff view.
   --json               (doctor, lint, status) Emit the report as JSON
                        instead of human-readable text. Exit code is the
                        same in both modes.

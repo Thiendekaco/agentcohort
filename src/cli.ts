@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { ExitPromptError } from '@inquirer/core';
 import { runInit, InitResult } from './installer';
 import { createInteractiveResolver } from './prompt';
@@ -9,6 +9,14 @@ import { runConfigCmd } from './configCmd';
 import { runDoctor, DoctorReport, Severity } from './doctor';
 import { runLint, LintReport, LintSeverity } from './lint';
 import { runStatus, StatusReport } from './status';
+import {
+  runUpgrade,
+  UpgradeAction,
+  UpgradeConflictRequest,
+  UpgradeConflictDecision,
+  UpgradeResult,
+} from './upgrade';
+import { unifiedDiff } from './textDiff';
 import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getTemplatesDir, getVersion } from './paths';
@@ -80,7 +88,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'config' &&
     args.command !== 'doctor' &&
     args.command !== 'lint' &&
-    args.command !== 'status'
+    args.command !== 'status' &&
+    args.command !== 'upgrade'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -141,6 +150,60 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ status: ${message}\n`, 'red'));
       return 2;
+    }
+  }
+
+  if (args.command === 'upgrade') {
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    const cwd = process.cwd();
+
+    // Read existing config silently — upgrade never re-prompts for it.
+    const existingConfig = loadConfig(cwd);
+    const models = resolveModels(existingConfig);
+
+    process.stdout.write(
+      paint('\nagentcohort upgrade', 'bold', 'cyan') +
+        paint(`  v${getVersion()}\n`, 'gray')
+    );
+    if (args.dryRun) {
+      process.stdout.write(paint('Dry run — no files will be written.\n', 'gray'));
+    } else if (!interactive && !args.yes && !args.force) {
+      process.stdout.write(
+        paint(
+          'Non-interactive — conflicts will keep the local version (safe default).\n',
+          'gray'
+        )
+      );
+    }
+
+    try {
+      const logger = createLogger();
+      const result = await runUpgrade({
+        cwd,
+        dryRun: args.dryRun,
+        force: args.force,
+        backup: args.backup,
+        interactive,
+        models,
+        resolver: interactive
+          ? (req) => upgradeResolver(req, { showDiff: args.diff })
+          : undefined,
+        logger,
+      });
+      if (args.diff) printVerboseDiffs(result);
+      printUpgradeSummary(result);
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No more changes will be applied.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`\n✗ upgrade: ${message}\n`, 'red'));
+      return 1;
     }
   }
 
@@ -383,6 +446,116 @@ function formatStatusReport(report: StatusReport): string {
 
 function pad(s: string, width: number): string {
   return s.length >= width ? s : s + ' '.repeat(width - s.length);
+}
+
+async function upgradeResolver(
+  req: UpgradeConflictRequest,
+  opts: { showDiff: boolean }
+): Promise<UpgradeConflictDecision> {
+  process.stdout.write('\n');
+  const reasonLabel = {
+    'user-edited': 'edited locally',
+    unstamped: 'pre-0.4.0 install (no integrity stamp)',
+    'section-edited': 'CLAUDE.md routing section edited',
+  }[req.reason];
+  process.stdout.write(
+    paint(`Conflict: ${req.targetRelPath}  `, 'bold') +
+      paint(`(${reasonLabel})\n`, 'yellow')
+  );
+  if (opts.showDiff) {
+    process.stdout.write(
+      unifiedDiff(req.oldText, req.newText, {
+        oldLabel: `${req.targetRelPath} (your version)`,
+        newLabel: `${req.targetRelPath} (bundled)`,
+      })
+    );
+  }
+
+  while (true) {
+    const choice = await select<'keep' | 'overwrite' | 'backup-overwrite' | 'diff'>({
+      message: `What to do with ${req.targetRelPath}?`,
+      choices: [
+        { name: 'Keep my version', value: 'keep' },
+        { name: 'Overwrite with bundled', value: 'overwrite' },
+        { name: 'Backup + overwrite (recommended)', value: 'backup-overwrite' },
+        { name: 'Show diff', value: 'diff' },
+      ],
+      default: 'keep',
+    });
+    if (choice === 'diff') {
+      process.stdout.write(
+        unifiedDiff(req.oldText, req.newText, {
+          oldLabel: `${req.targetRelPath} (your version)`,
+          newLabel: `${req.targetRelPath} (bundled)`,
+        })
+      );
+      continue;
+    }
+    const applyToAll = await confirm({
+      message: 'Apply this choice to all remaining conflicts?',
+      default: false,
+    });
+    return { choice, applyToAll };
+  }
+}
+
+function printVerboseDiffs(result: UpgradeResult): void {
+  const interesting: UpgradeAction[] = result.actions.filter(
+    (a) =>
+      a.oldText !== undefined &&
+      a.newText !== undefined &&
+      (a.disposition === 'refreshed' ||
+        a.disposition === 'overwritten' ||
+        a.disposition === 'backed-up-and-overwritten' ||
+        a.disposition === 'kept' ||
+        a.disposition === 'section-replaced' ||
+        a.disposition === 'section-kept')
+  );
+  if (interesting.length === 0) return;
+  process.stdout.write(paint('\n── Diffs ──\n', 'bold'));
+  for (const a of interesting) {
+    process.stdout.write(
+      paint(`\n[${a.disposition}] ${a.targetRelPath}\n`, 'cyan')
+    );
+    const diff = unifiedDiff(a.oldText!, a.newText!, {
+      oldLabel: `${a.targetRelPath} (current)`,
+      newLabel: `${a.targetRelPath} (bundled)`,
+    });
+    process.stdout.write(diff || paint('  (no textual change)\n', 'gray'));
+  }
+}
+
+function printUpgradeSummary(result: UpgradeResult): void {
+  const counts = new Map<string, number>();
+  for (const a of result.actions) {
+    counts.set(a.disposition, (counts.get(a.disposition) ?? 0) + 1);
+  }
+  const part = (label: string, key: string): string | null => {
+    const n = counts.get(key) ?? 0;
+    return n > 0 ? `${n} ${label}` : null;
+  };
+  const segments = [
+    part('refreshed', 'refreshed'),
+    part('created', 'created'),
+    part('overwritten', 'overwritten'),
+    part('overwritten w/ backup', 'backed-up-and-overwritten'),
+    part('kept local', 'kept'),
+    part('section-replaced', 'section-replaced'),
+    part('section-kept', 'section-kept'),
+    part('unchanged', 'unchanged'),
+    part('section-unchanged', 'section-unchanged'),
+  ].filter((x): x is string => x !== null);
+
+  process.stdout.write('\n');
+  const head = result.dryRun ? 'Dry run complete' : 'Upgrade complete';
+  process.stdout.write(
+    `${paint(head, 'bold', 'green')}  ${segments.join(' · ') || 'nothing to do'}\n`
+  );
+  if (result.dryRun) {
+    process.stdout.write(
+      `${paint('•', 'cyan')} Re-run without ${paint('--dry-run', 'bold')} to apply.\n`
+    );
+  }
 }
 
 // Auto-run only when executed as the bin (not when imported by tests/tooling).

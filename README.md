@@ -129,6 +129,30 @@ Also strictly read-only. Sections:
 
 Exit codes follow the same `0` / `1` / `2` convention as `doctor`.
 
+### Upgrade in place — `agentcohort upgrade`
+
+Sync templates to whatever the currently-installed agentcohort CLI
+bundles, without losing local edits:
+
+```bash
+agentcohort upgrade            # interactive, prompts on conflicts
+agentcohort upgrade --dry-run  # preview, write nothing
+agentcohort upgrade --diff     # also print unified diff per changed file
+agentcohort upgrade --backup   # always back up before overwriting
+agentcohort upgrade --force    # overwrite user-edited files (combine with --backup)
+```
+
+How files are classified:
+
+- **`unchanged`** — file matches bundled. Skip silently.
+- **`outdated`** — stamp matches an older bundled version. **Auto-refresh** (no prompt — the user did not edit).
+- **`user-edited`** — body no longer matches its stamp. **Prompt** with 4 choices: `Keep / Overwrite / Backup + overwrite / Show diff`. "Show diff" loops back to the prompt.
+- **`unstamped`** — no integrity stamp (pre-0.4.0 install). Treated as user-edited.
+- **missing locally** — bundled file not present. Install fresh.
+- **extra locally** — user-created `.claude/*.md` files not in the bundled manifest are **never touched or deleted**.
+
+`.agentcohort.json` is read for the user's model tiers but never written — gates and models persist exactly as the user configured them.
+
 ### Quick status — `agentcohort status`
 
 One-shot read-only summary of the current install — version, counts,
@@ -314,6 +338,11 @@ runs.
 | `agentcohort lint --json` | Same checks, machine-readable JSON output. |
 | `agentcohort status` | **Read-only** at-a-glance report: version, agent / command counts, CLAUDE.md routing presence, resolved model tiers + gate modes, OpenWolf activity, planned upcoming features. |
 | `agentcohort status --json` | Same data, machine-readable JSON output. |
+| `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
+| `agentcohort upgrade --dry-run` | Show what would change without writing. |
+| `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
+| `agentcohort upgrade --backup` | Always back up a file before overwriting it. |
+| `agentcohort upgrade --force` | Overwrite user-edited files without prompting. Combine with `--backup` to be safe. |
 | `agentcohort --version` | Print the version. |
 | `agentcohort --help` | Show help. |
 
