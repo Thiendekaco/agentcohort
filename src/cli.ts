@@ -10,6 +10,15 @@ import { runDoctor, DoctorReport, Severity } from './doctor';
 import { runLint, LintReport, LintSeverity } from './lint';
 import { runStatus, StatusReport } from './status';
 import {
+  runList,
+  ListReport,
+  ListScope,
+  ListAgentEntry,
+  ListCommandEntry,
+  ListGateEntry,
+  ListEntryStatus,
+} from './list';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -89,7 +98,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'doctor' &&
     args.command !== 'lint' &&
     args.command !== 'status' &&
-    args.command !== 'upgrade'
+    args.command !== 'upgrade' &&
+    args.command !== 'list'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -149,6 +159,42 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ status: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'list') {
+    const sub = args.subcommand;
+    if (
+      sub !== null &&
+      sub !== 'agents' &&
+      sub !== 'commands' &&
+      sub !== 'gates'
+    ) {
+      process.stderr.write(
+        paint(
+          `✗ list: unknown scope '${sub}'. Use one of: agents, commands, gates (or omit for all).\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    const scope: ListScope = (sub ?? 'all') as ListScope;
+    try {
+      const report = runList({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        scope,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatListReport(report));
+      }
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -446,6 +492,118 @@ function formatStatusReport(report: StatusReport): string {
 
 function pad(s: string, width: number): string {
   return s.length >= width ? s : s + ' '.repeat(width - s.length);
+}
+
+function formatListReport(report: ListReport): string {
+  const out: string[] = [];
+  out.push(paint('\nagentcohort list', 'bold', 'cyan'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  if (report.agents !== undefined) {
+    out.push(formatAgentsBlock(report.agents));
+  }
+  if (report.commands !== undefined) {
+    if (out.length > 2) out.push('');
+    out.push(formatCommandsBlock(report.commands));
+  }
+  if (report.gates !== undefined) {
+    if (out.length > 2) out.push('');
+    out.push(formatGatesBlock(report.gates));
+  }
+  return out.join('\n') + '\n';
+}
+
+const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+  installed: 'green',
+  outdated: 'yellow',
+  'user-edited': 'yellow',
+  unstamped: 'yellow',
+  missing: 'red',
+  extra: 'gray',
+};
+
+function statusBadge(status: ListEntryStatus): string {
+  return paint(status, STATUS_COLOR[status]);
+}
+
+function formatAgentsBlock(entries: ListAgentEntry[]): string {
+  const out: string[] = [];
+  const installed = entries.filter((e) => e.status === 'installed').length;
+  const total = entries.filter((e) => e.status !== 'extra').length;
+  out.push(
+    paint(`Agents `, 'bold') +
+      paint(`(${installed}/${total} installed)`, 'gray')
+  );
+  if (entries.length === 0) {
+    out.push(paint('  (none — bundled directory missing)', 'gray'));
+    return out.join('\n');
+  }
+  const nameW = Math.max(...entries.map((e) => e.name.length), 8);
+  const tierW = 14;
+  for (const e of entries) {
+    const tierLabel = e.tier
+      ? `${e.modelRaw} (${e.tier})`
+      : e.modelRaw || '—';
+    out.push(
+      `  ${pad(e.name, nameW)}  ${pad(tierLabel, tierW)}  ${statusBadge(e.status)}`
+    );
+    if (e.description !== '') {
+      out.push(paint(`    └─ ${truncate(e.description, 96)}`, 'gray'));
+    }
+  }
+  return out.join('\n');
+}
+
+function formatCommandsBlock(entries: ListCommandEntry[]): string {
+  const out: string[] = [];
+  const installed = entries.filter((e) => e.status === 'installed').length;
+  const total = entries.filter((e) => e.status !== 'extra').length;
+  out.push(
+    paint(`Commands `, 'bold') +
+      paint(`(${installed}/${total} installed)`, 'gray')
+  );
+  if (entries.length === 0) {
+    out.push(paint('  (none — bundled directory missing)', 'gray'));
+    return out.join('\n');
+  }
+  const invW = Math.max(...entries.map((e) => e.invocation.length), 10);
+  for (const e of entries) {
+    out.push(
+      `  ${pad(e.invocation, invW)}  ${statusBadge(e.status)}` +
+        (e.argumentHint ? paint(`  ${e.argumentHint}`, 'gray') : '')
+    );
+    if (e.description !== '') {
+      out.push(paint(`    └─ ${truncate(e.description, 96)}`, 'gray'));
+    }
+  }
+  return out.join('\n');
+}
+
+function formatGatesBlock(entries: ListGateEntry[]): string {
+  const out: string[] = [];
+  out.push(paint('Gates', 'bold'));
+  const nameW = Math.max(...entries.map((e) => e.name.length), 8);
+  for (const e of entries) {
+    const modeColor =
+      e.mode === 'on' ? 'green' : e.mode === 'off' ? 'gray' : 'yellow';
+    const srcLabel = e.source === 'config' ? '(config)' : '(default)';
+    out.push(
+      `  ${pad(e.name, nameW)}  ${paint(pad(e.mode, 6), modeColor)}  ${paint(srcLabel, 'gray')}`
+    );
+    out.push(paint(`    └─ ${e.blurb}`, 'gray'));
+  }
+  out.push(
+    paint(
+      'Modes: on (always pause) · off (never) · auto (pause when Tier 4 / escalation keyword)',
+      'gray'
+    )
+  );
+  return out.join('\n');
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '…';
 }
 
 async function upgradeResolver(

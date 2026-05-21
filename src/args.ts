@@ -2,6 +2,8 @@ import { paint } from './logger';
 
 export interface ParsedArgs {
   command: string | null;
+  /** First positional after the command (e.g. `list agents` → "agents"). */
+  subcommand: string | null;
   yes: boolean;
   dryRun: boolean;
   force: boolean;
@@ -33,6 +35,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
 export function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     command: null,
+    subcommand: null,
     yes: false,
     dryRun: false,
     force: false,
@@ -54,6 +57,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
     } else if (parsed.command === null) {
       parsed.command = arg;
+    } else if (parsed.command === 'list' && parsed.subcommand === null) {
+      parsed.subcommand = arg;
     } else {
       parsed.unknown.push(arg);
     }
@@ -88,6 +93,11 @@ ${b('COMMANDS')}
                        command counts, CLAUDE.md routing presence,
                        resolved model tiers + gate modes, OpenWolf
                        activity, and planned upcoming features.
+  list [scope]         Enumerate what is available in the install. Scope
+                       is one of: agents (per-file install status + model
+                       tier), commands (slash-commands with descriptions),
+                       gates (review gates + current mode + when each
+                       pauses). Omit scope to show all three.
   upgrade              Sync the project's .claude/ templates and CLAUDE.md
                        routing section to the bundled version. Refreshes
                        outdated files automatically and prompts before
@@ -110,9 +120,9 @@ ${b('OPTIONS')}
   --diff               (upgrade only) Print the unified diff of every
                        file that would be refreshed or overwritten, in
                        addition to the per-conflict prompt's diff view.
-  --json               (doctor, lint, status) Emit the report as JSON
-                       instead of human-readable text. Exit code is the
-                       same in both modes.
+  --json               (doctor, lint, status, list) Emit the report as
+                       JSON instead of human-readable text. Exit code is
+                       the same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 
