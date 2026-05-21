@@ -20,6 +20,14 @@ import {
 } from './list';
 import { runShow, ShowResult, ShowMatch, ShowVariant } from './show';
 import {
+  runSearch,
+  SearchResult,
+  SearchMode,
+  SearchScope,
+  SearchFileResult,
+  SearchLineMatch,
+} from './search';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -101,7 +109,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'status' &&
     args.command !== 'upgrade' &&
     args.command !== 'list' &&
-    args.command !== 'show'
+    args.command !== 'show' &&
+    args.command !== 'search'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -197,6 +206,53 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'search') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint('✗ search: missing <keyword>. Usage: agentcohort search <keyword> [--agents|--commands] [--exact|--regex]\n', 'red')
+      );
+      return 1;
+    }
+    if (args.agents && args.commands) {
+      process.stderr.write(
+        paint('✗ search: --agents and --commands are mutually exclusive (omit both to search both).\n', 'red')
+      );
+      return 1;
+    }
+    if (args.exact && args.regex) {
+      process.stderr.write(
+        paint('✗ search: --exact and --regex are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const scope: SearchScope = args.agents
+      ? 'agents'
+      : args.commands
+      ? 'commands'
+      : 'all';
+    const mode: SearchMode = args.regex ? 'regex' : args.exact ? 'exact' : 'substring';
+    try {
+      const result = runSearch({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query,
+        scope,
+        mode,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatSearchResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ search: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -697,6 +753,69 @@ function formatShowMatch(m: ShowMatch): string {
   out.push('');
   out.push(m.content.trimEnd());
   return out.join('\n');
+}
+
+function formatSearchResult(result: SearchResult): string {
+  if (result.note !== '') {
+    return paint(`✗ search: ${result.note}\n`, 'red');
+  }
+  if (result.files.length === 0) {
+    const scopeLabel =
+      result.scope === 'all' ? 'agents + commands' : result.scope;
+    return (
+      paint(
+        `No matches for ${JSON.stringify(result.query)} in ${scopeLabel} ` +
+          `(${result.mode}).\n`,
+        'gray'
+      )
+    );
+  }
+  const out: string[] = [];
+  for (const f of result.files) {
+    out.push(formatSearchFile(f));
+    out.push('');
+  }
+  const filesLabel =
+    result.totalFiles === 1 ? '1 file' : `${result.totalFiles} files`;
+  const matchesLabel =
+    result.totalMatches === 1 ? '1 match' : `${result.totalMatches} matches`;
+  out.push(
+    paint(`${matchesLabel} in ${filesLabel}`, 'bold') +
+      paint(`  (${result.mode}, scope: ${result.scope})`, 'gray')
+  );
+  return out.join('\n') + '\n';
+}
+
+function formatSearchFile(f: SearchFileResult): string {
+  const kindLabel = f.kind === 'agent' ? 'agents' : 'commands';
+  const sourceTag = f.source === 'bundled' ? paint('  [bundled]', 'gray') : '';
+  const out: string[] = [];
+  out.push(paint(`${kindLabel}/${f.name}.md`, 'bold', 'cyan') + sourceTag);
+  // Compute the gutter width from the largest line number so the
+  // numbers right-align across all rows of this file.
+  const maxLine = f.matches[f.matches.length - 1]?.line ?? 0;
+  const gutter = String(maxLine).length;
+  for (const m of f.matches) {
+    const num = String(m.line).padStart(gutter, ' ');
+    out.push(paint(`  ${num}:`, 'gray') + ' ' + highlightLine(m));
+  }
+  return out.join('\n');
+}
+
+function highlightLine(m: SearchLineMatch): string {
+  // Render the line with the matched ranges painted. Offsets are
+  // already half-open + non-overlapping (matchers advance past each
+  // hit before searching for the next), so a single linear walk is
+  // enough.
+  const out: string[] = [];
+  let cursor = 0;
+  for (const { start, end } of m.offsets) {
+    if (start > cursor) out.push(m.content.slice(cursor, start));
+    out.push(paint(m.content.slice(start, end), 'bold', 'yellow'));
+    cursor = end;
+  }
+  if (cursor < m.content.length) out.push(m.content.slice(cursor));
+  return out.join('');
 }
 
 async function upgradeResolver(
