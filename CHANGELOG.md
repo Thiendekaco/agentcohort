@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Thiendekaco/agentcohort/compare/v0.6.0...v0.7.0) (2026-05-21)
+
+
+### Features
+
+* ship 0.7.0 — discovery commands + mutating ops + shell completion ([#37](https://github.com/Thiendekaco/agentcohort/issues/37)) ([f95e72c](https://github.com/Thiendekaco/agentcohort/commit/f95e72c4279befc1464b8c18730c339b0f195692))
+
 ## [0.6.0](https://github.com/Thiendekaco/agentcohort/compare/v0.5.0...v0.6.0) (2026-05-21)
 
 
