@@ -22,28 +22,51 @@ non-negotiable.
 
 ## Step 2 — Surface the plan
 
-Print the dispatcher's plan to the user verbatim, plus a single
-question line:
+Print the dispatcher's short two-option panel **verbatim** — do not add
+extra fields, do not expand the agent roster, do not re-introduce the
+old `Classification / Pipeline / Agents / Skipping / Next step` lines.
+The two-option block IS the approval gate.
+
+Then wait for the user. Accept these replies:
+
+- **`1`**, **`y`**, or an empty/Enter reply → run the recommended next
+  step exactly as the dispatcher named it.
+- **`2`** → the user wants to override. Print the flow list below and
+  wait for a letter. After the letter, run that flow on `$ARGUMENTS`.
+- **`abort`** → stop. Do nothing else.
+- **`gates ±<name>`** (`gates +architect`, `gates -plan`, …) →
+  override a single gate for THIS task only (does not modify
+  `.agentcohort.json`). Update the `Gates:` line and re-print the
+  panel, then re-ask. Valid gate names: `architect`, `plan`,
+  `bottleneck`, `root-cause`, `expert-council`.
+- Anything else (a free-text question, a clarification) → answer it,
+  then re-print the panel and wait again. Never silently run.
+
+### Flow list (only print when user replies `2`)
 
 ```
-Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
+Pick a flow:
+  a) /quick-fix          — known root cause, 1–2 line fix
+  b) /quick-feature      — small feature, 1–3 files, no API/schema/auth
+  c) /dev-flow           — feature / refactor / normal change
+  d) /bug-audit          — investigate unknown bug (audit only, no fix)
+  e) /bug-fix-approved   — apply a previously approved fix
+  f) /perf-hunt          — slowness / bottleneck investigation
+  g) /review-diff        — review pending changes
+  h) /fix-blockers       — address reviewer blockers
+  i) /repo-scout         — read-only walkthrough
+
+Reply with the letter (e.g. c), or `back` to return to the recommendation.
 ```
 
-- `y` → run the next step exactly as planned.
-- `escalate` → move up one tier (e.g. Tier 2b → Tier 3 `/dev-flow`,
-  Tier 3 → Tier 4 with forced architect + expert-council) and re-print
-  the new plan.
-- `abort` → stop. Do nothing else.
-- `question` → answer the user's question; do not execute the plan
-  until you re-confirm.
-- `gates +architect`, `gates -plan`, etc. → override a single gate
-  for THIS task only (does not modify `.agentcohort.json`). Re-print
-  the plan with the new `Approval gates:` line, then re-ask for `y`.
-  Valid gate names: `architect`, `plan`, `root-cause`, `expert-council`.
+If the user picks a letter, run that command on `$ARGUMENTS` immediately
+— their explicit choice IS the approval; do not re-prompt. If they pick
+`back`, re-print the recommendation panel.
 
 ## Step 3 — Execute the chosen next step
 
-Only after the user replies `y`:
+Only after the user replies `1` / `y` / Enter (or picks a letter from
+Step 2's flow list):
 
 | Tier | Action |
 |---|---|
@@ -60,8 +83,9 @@ Only after the user replies `y`:
 
 ## Hard rules
 
-- **Never run downstream agents before the user replies `y`.** Silent
-  routing destroys the value of having a plan.
+- **Never run downstream agents before the user replies `1` / `y` / Enter,
+  or explicitly picks a letter from the flow list.** Silent routing
+  destroys the value of having a plan.
 - **Bug audit never fixes.** Invariant from `/bug-audit`. The
   dispatcher cannot route a Tier 4 bug into a fix path.
 - **Reviewer is never skipped** for any code change, regardless of
