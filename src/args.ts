@@ -81,6 +81,10 @@ ${b('COMMANDS')}
                        references, and slash-command references in
                        CLAUDE.md. Complements doctor — doctor checks
                        structure, lint checks content. Exits 0 on clean.
+  status               At-a-glance read-only report: version, agent /
+                       command counts, CLAUDE.md routing presence,
+                       resolved model tiers + gate modes, OpenWolf
+                       activity, and planned upcoming features.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -95,7 +99,7 @@ ${b('OPTIONS')}
   --reconfigure        (init only) Re-prompt model-tier strategy even if a
                        .agentcohort.json already exists. Requires a TTY;
                        not compatible with --yes.
-  --json               (doctor, lint) Emit the diagnostic report as JSON
+  --json               (doctor, lint, status) Emit the report as JSON
                        instead of human-readable text. Exit code is the
                        same in both modes.
   --help, -h           Show this help.
