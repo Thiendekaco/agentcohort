@@ -98,7 +98,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         parsed.command === 'show' ||
         parsed.command === 'search' ||
         parsed.command === 'diff' ||
-        parsed.command === 'reset') &&
+        parsed.command === 'reset' ||
+        parsed.command === 'completion') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -177,6 +178,11 @@ ${b('COMMANDS')}
                        outdated files automatically and prompts before
                        overwriting any file the user has edited locally.
                        Preserves .agentcohort.json (models + gates).
+  completion <shell>   Emit a shell completion script for the named
+                       shell (bash, zsh, or pwsh). Pipe to your shell
+                       config — see README for one-liners. Re-run
+                       after upgrading the package to refresh the
+                       baked-in name lists.
   uninstall            Mutating. Remove the bundled-set files from
                        .claude/ and strip the agentcohort routing
                        section from CLAUDE.md. NEVER deletes user-

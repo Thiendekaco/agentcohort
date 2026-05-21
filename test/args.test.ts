@@ -229,6 +229,22 @@ describe('parseArgs — uninstall flags', () => {
   });
 });
 
+describe('parseArgs — completion subcommand', () => {
+  it('parses `completion <shell>` with shell captured into subcommand', () => {
+    for (const s of ['bash', 'zsh', 'pwsh']) {
+      const a = parseArgs(['completion', s]);
+      expect(a.command).toBe('completion');
+      expect(a.subcommand).toBe(s);
+    }
+  });
+
+  it('parses bare `completion` (CLI validates the shell, not the parser)', () => {
+    const a = parseArgs(['completion']);
+    expect(a.command).toBe('completion');
+    expect(a.subcommand).toBeNull();
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

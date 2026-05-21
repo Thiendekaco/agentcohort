@@ -47,6 +47,12 @@ import {
   UninstallActionKind,
 } from './uninstall';
 import {
+  buildContext as buildCompletionContext,
+  generateCompletion,
+  COMPLETION_SHELLS,
+  CompletionShell,
+} from './completion';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -132,7 +138,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'search' &&
     args.command !== 'diff' &&
     args.command !== 'reset' &&
-    args.command !== 'uninstall'
+    args.command !== 'uninstall' &&
+    args.command !== 'completion'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -228,6 +235,38 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'completion') {
+    const shell = args.subcommand;
+    if (shell === null || shell === '') {
+      process.stderr.write(
+        paint(
+          `✗ completion: missing <shell>. Usage: agentcohort completion ${COMPLETION_SHELLS.join(' | ')}\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    if (!COMPLETION_SHELLS.includes(shell as CompletionShell)) {
+      process.stderr.write(
+        paint(
+          `✗ completion: unknown shell '${shell}'. Use one of: ${COMPLETION_SHELLS.join(', ')}.\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    try {
+      const ctx = buildCompletionContext(getTemplatesDir());
+      const script = generateCompletion(shell as CompletionShell, ctx);
+      process.stdout.write(script);
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ completion: ${message}\n`, 'red'));
       return 2;
     }
   }
