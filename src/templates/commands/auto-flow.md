@@ -22,28 +22,68 @@ non-negotiable.
 
 ## Step 2 — Surface the plan
 
-Print the dispatcher's plan to the user verbatim, plus a single
-question line:
+Print the dispatcher's short recommendation block (`Recommended` /
+`Cost` / `Why` / optional `Escalation`) verbatim — do not expand the
+agent roster, do not re-introduce the old `Classification / Pipeline /
+Agents / Skipping / Next step` lines.
+
+Then use the **`AskUserQuestion`** tool to surface the approval gate:
+
+- `question`: `"<recommended slash command> — proceed?"` (interpolate
+  the dispatcher's `Recommended:` value, e.g. `"/dev-flow — proceed?"`)
+- `header`: `"Routing"`
+- `options`:
+  - `Run recommended` — Run the dispatcher's recommended next step.
+  - `Pick a different flow` — Show the full list of flows.
+
+Map the answer:
+
+- **`Run recommended`** → execute the next step (Step 3 table).
+- **`Pick a different flow`** → print the text flow list below, then
+  wait for the user's letter.
+- **`Other` (free-form)** → parse the text:
+  - `abort` → stop. Do nothing else.
+  - `gates ±<name>` (e.g. `gates +architect`, `gates -plan`) → override
+    a single gate for THIS task only (does not modify
+    `.agentcohort.json`). Update the `Gates:` line and re-issue the
+    `AskUserQuestion`. Valid gate names: `architect`, `plan`,
+    `bottleneck`, `root-cause`, `expert-council`.
+  - Anything else → treat as a clarifying question; answer it, then
+    re-issue the `AskUserQuestion`. Never silently run.
+
+**Fallback** when `AskUserQuestion` is unavailable (older Claude Code,
+headless / scripted runs): print a numbered text panel and accept
+`1` / `y` / Enter as "Run recommended", `2` as "Pick a different
+flow", `abort` to stop, `gates ±<name>` to override.
+
+### Flow list (only print when user picks "Pick a different flow")
+
+The full list contains 9 items, which exceeds `AskUserQuestion`'s
+4-option limit — surface it as a text menu instead:
 
 ```
-Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
+Pick a flow:
+  a) /quick-fix          — known root cause, 1–2 line fix
+  b) /quick-feature      — small feature, 1–3 files, no API/schema/auth
+  c) /dev-flow           — feature / refactor / normal change
+  d) /bug-audit          — investigate unknown bug (audit only, no fix)
+  e) /bug-fix-approved   — apply a previously approved fix
+  f) /perf-hunt          — slowness / bottleneck investigation
+  g) /review-diff        — review pending changes
+  h) /fix-blockers       — address reviewer blockers
+  i) /repo-scout         — read-only walkthrough
+
+Reply with the letter (e.g. c), or `back` to return to the recommendation.
 ```
 
-- `y` → run the next step exactly as planned.
-- `escalate` → move up one tier (e.g. Tier 2b → Tier 3 `/dev-flow`,
-  Tier 3 → Tier 4 with forced architect + expert-council) and re-print
-  the new plan.
-- `abort` → stop. Do nothing else.
-- `question` → answer the user's question; do not execute the plan
-  until you re-confirm.
-- `gates +architect`, `gates -plan`, etc. → override a single gate
-  for THIS task only (does not modify `.agentcohort.json`). Re-print
-  the plan with the new `Approval gates:` line, then re-ask for `y`.
-  Valid gate names: `architect`, `plan`, `root-cause`, `expert-council`.
+If the user picks a letter, run that command on `$ARGUMENTS` immediately
+— their explicit choice IS the approval; do not re-prompt. If they pick
+`back`, re-issue the recommendation `AskUserQuestion`.
 
 ## Step 3 — Execute the chosen next step
 
-Only after the user replies `y`:
+Only after the user replies `1` / `y` / Enter (or picks a letter from
+Step 2's flow list):
 
 | Tier | Action |
 |---|---|
@@ -60,8 +100,9 @@ Only after the user replies `y`:
 
 ## Hard rules
 
-- **Never run downstream agents before the user replies `y`.** Silent
-  routing destroys the value of having a plan.
+- **Never run downstream agents before the user replies `1` / `y` / Enter,
+  or explicitly picks a letter from the flow list.** Silent routing
+  destroys the value of having a plan.
 - **Bug audit never fixes.** Invariant from `/bug-audit`. The
   dispatcher cannot route a Tier 4 bug into a fix path.
 - **Reviewer is never skipped** for any code change, regardless of

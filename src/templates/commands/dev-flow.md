@@ -20,17 +20,33 @@ any stage raises a blocker.
    `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
    `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
    STOP and surface the architect's decision (chosen approach + key
-   trade-offs + risks) for user review. Wait for:
-   - `y` → continue to step 4.
-   - `revise <feedback>` → re-run architect with the feedback.
-   - `abort` → stop the pipeline.
-   If `off`, skip this gate and continue immediately.
+   trade-offs + risks). Then use the **`AskUserQuestion`** tool with:
+   - `question`: `"Architect verdict — proceed with this approach?"`
+   - `header`: `"Architect gate"`
+   - `options`:
+     - `Approve` — Continue to the planner with this architecture.
+     - `Revise` — I'll provide feedback; re-run the architect.
+     - `Abort` — Stop the pipeline.
+   On `Approve` continue to step 4. On `Revise` ask the user for the
+   feedback as a free-form follow-up, then re-run solution-architect
+   with it. On `Abort` stop. If the orchestrator environment lacks
+   `AskUserQuestion`, fall back to a numbered text menu and accept
+   `1`/`y`/Enter as Approve, `revise <feedback>` as Revise, `abort`
+   as Abort. If `gates.architect` is `off`, skip this gate entirely.
 4. **feature-planner** — produce the bite-sized, test-first implementation
    checklist with exact files and verification.
 5. **🚦 HUMAN GATE — plan**. Read `.agentcohort.json` for `gates.plan`
    (default `on`). If `on`, OR `auto` AND Tier ≥ 4, STOP and surface the
-   plan (files to touch, tests to add, verification commands) for user
-   review. Same reply contract as the architect gate.
+   plan (files to touch, tests to add, verification commands). Then
+   use **`AskUserQuestion`** with:
+   - `question`: `"Plan ready — proceed with implementation?"`
+   - `header`: `"Plan gate"`
+   - `options`:
+     - `Approve` — Implement exactly this plan.
+     - `Revise` — I'll provide feedback; re-run the planner.
+     - `Abort` — Stop the pipeline.
+   Same fallback contract as the architect gate
+   (`1`/`y`/Enter / `revise <feedback>` / `abort`).
 6. **feature-implementer** — execute the plan; minimal change; focused tests;
    targeted verification; no scope creep.
 7. **test-verifier** — add/run tests, typecheck, lint; fix only breakages

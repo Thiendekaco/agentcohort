@@ -73,20 +73,44 @@ For ANY user task — feature, bug, perf, refactor, review, "fix X",
 the assistant **MUST** start by invoking `/auto-flow` with the user's
 message verbatim. Do not write code, edit files, or run downstream
 agents directly until the `dispatcher` has classified the task,
-printed the plan, and the user has explicitly approved with `y`.
+surfaced its recommendation, and the user has approved via the
+selection prompt.
 
 The user should not need to type a slash command. Natural-language
 requests automatically route through `/auto-flow`.
+
+**The approval prompt.** After the dispatcher prints its short
+recommendation (Recommended / Cost / Why / optional Escalation), the
+orchestrator calls Claude Code's **`AskUserQuestion`** tool with two
+options:
+
+- `Run recommended` — execute the dispatcher's chosen next step.
+- `Pick a different flow` — show the full text flow list
+  (`/quick-fix`, `/quick-feature`, `/dev-flow`, `/bug-audit`,
+  `/bug-fix-approved`, `/perf-hunt`, `/review-diff`, `/fix-blockers`,
+  `/repo-scout`); the user picks a letter.
+
+The "Other" free-form slot of `AskUserQuestion` handles power-user
+input:
+
+- `abort` → stop the pipeline.
+- `gates ±<name>` → per-task gate override; re-issue the prompt with
+  the updated `Gates:` line.
+- Anything else → treated as a clarifying question; answer it, then
+  re-issue the prompt.
+
+If `AskUserQuestion` is unavailable (older Claude Code, headless /
+scripted runs), the orchestrator falls back to a numbered text panel
+(`[1] Run recommended` / `[2] Pick a different flow`) and accepts
+the same vocabulary.
 
 **Exception — pure lookups answer inline** (no `/auto-flow` needed):
 - "Where is file X?" / "What does function Y do?" / "Trace where Z is wired."
 - Any read-only question that does not change state and does not
   require code edits.
 
-If the user replies `escalate` to the plan, route one tier up; `abort`
-stops; `question` answers a follow-up before re-confirming. Never
-silently skip the dispatcher because a task "looks small" — sizing is
-the dispatcher's job, not the assistant's.
+Never silently skip the dispatcher because a task "looks small" —
+sizing is the dispatcher's job, not the assistant's.
 
 A project may opt out by writing a contrary instruction in `CLAUDE.md`
 **outside** this section (per the interoperability rules above).
@@ -104,7 +128,8 @@ A project may opt out by writing a contrary instruction in `CLAUDE.md`
 
 `/auto-flow` is the **default entry point**. It runs the cheap
 `dispatcher` agent first to classify the task into a tier and print
-an execution plan; nothing else runs until the user replies `y`.
+the two-option panel; nothing else runs until the user replies
+`1` / `y` / Enter (or picks a flow from `[2]`).
 
 | Tier | When | Pipeline |
 |---|---|---|
@@ -123,8 +148,8 @@ an execution plan; nothing else runs until the user replies `y`.
 `wallet`, `signature`, `private key`, `concurrency`, `race condition`,
 `lock`, `mutex`, `transaction`, `cache`, `invalidation`, `ttl`.
 
-Uncertainty escalates **up**, never down. The user can override with
-`escalate` / `abort` / `question` instead of `y`.
+Uncertainty escalates **up**, never down. The user can override at
+the panel with `[2]` (pick a different flow) or `abort`.
 
 ## Workflow selection
 
@@ -192,26 +217,34 @@ expensive stages run on top of it.
 Missing keys fall back to defaults. Run `agentcohort config` to
 re-prompt interactively.
 
-**Per-task override** at the dispatcher plan prompt:
+**Per-task override** via the dispatcher's approval prompt — type into
+the `AskUserQuestion` "Other" slot (or the text fallback):
 
 ```
-Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
 > gates -plan             # skip the plan gate for THIS task only
 > gates +architect        # force architect gate on for THIS task only
 > gates +bottleneck       # force bottleneck gate on (default is auto)
 ```
 
-Overrides do not modify `.agentcohort.json`.
+The orchestrator updates the `Gates:` line, re-prints the panel, and
+waits again. Overrides do not modify `.agentcohort.json`.
 
-**Reply contract at a gate.** When a gate fires, agents present the
-relevant artifact and wait for:
+**Reply contract at a gate.** When a gate fires, the orchestrator
+surfaces the relevant artifact and calls Claude Code's
+**`AskUserQuestion`** tool with three options:
 
-- `y` — continue to the next stage.
-- `revise <feedback>` — re-run the current stage with the feedback.
-- `abort` — stop the pipeline.
+- `Approve` — continue to the next stage.
+- `Revise` — collect free-form feedback in a follow-up message, then
+  re-run the current stage with it.
+- `Abort` — stop the pipeline.
 
-Agents do not auto-continue past a gate that is `on` and has not
-been replied to.
+If `AskUserQuestion` is unavailable (older Claude Code, headless /
+scripted runs), the orchestrator falls back to a numbered text menu
+and accepts `1` / `y` / Enter (Approve), `revise <feedback>`
+(Revise), or `abort`.
+
+The orchestrator does not auto-continue past a gate that is `on` and
+has not been answered.
 
 ## Bug audit rule (non-negotiable)
 
