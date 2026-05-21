@@ -129,6 +129,43 @@ Also strictly read-only. Sections:
 
 Exit codes follow the same `0` / `1` / `2` convention as `doctor`.
 
+### Quick status — `agentcohort status`
+
+One-shot read-only summary of the current install — version, counts,
+config, gates, OpenWolf, and what's planned next:
+
+```bash
+agentcohort status          # human-readable, colored
+agentcohort status --json   # JSON for tooling
+```
+
+```text
+agentcohort v0.5.0
+
+Install:
+  Agents:            17 installed (17 bundled)
+  Commands:          10 installed (10 bundled)
+  CLAUDE.md:         routing section present
+  Config:            .agentcohort.json (custom)
+  OpenWolf:          active (.wolf/ found)
+
+Models:
+  premium:           claude-opus-4-7
+  ...
+
+Gates:
+  architect:         on
+  ...
+
+Coming in future versions
+  v0.6     agentcohort upgrade   bump bundled templates while preserving local config
+  v0.7     Project profiles      `init --profile=backend|fullstack|...`
+  ...
+```
+
+The "Coming in future versions" block is a static roadmap pointer, not
+a release commitment. Targets may shift.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -275,6 +312,8 @@ runs.
 | `agentcohort doctor --json` | Same checks, machine-readable JSON output. |
 | `agentcohort lint` | **Read-only** content-quality check (frontmatter valid, boot directive intact, model refs resolve, slash-command refs in CLAUDE.md exist). Exits 0 clean, 1 on warning/error, 2 internal. |
 | `agentcohort lint --json` | Same checks, machine-readable JSON output. |
+| `agentcohort status` | **Read-only** at-a-glance report: version, agent / command counts, CLAUDE.md routing presence, resolved model tiers + gate modes, OpenWolf activity, planned upcoming features. |
+| `agentcohort status --json` | Same data, machine-readable JSON output. |
 | `agentcohort --version` | Print the version. |
 | `agentcohort --help` | Show help. |
 

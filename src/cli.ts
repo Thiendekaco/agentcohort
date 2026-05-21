@@ -8,6 +8,7 @@ import { promptGates } from './promptGates';
 import { runConfigCmd } from './configCmd';
 import { runDoctor, DoctorReport, Severity } from './doctor';
 import { runLint, LintReport, LintSeverity } from './lint';
+import { runStatus, StatusReport } from './status';
 import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getTemplatesDir, getVersion } from './paths';
@@ -78,7 +79,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'init' &&
     args.command !== 'config' &&
     args.command !== 'doctor' &&
-    args.command !== 'lint'
+    args.command !== 'lint' &&
+    args.command !== 'status'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -119,6 +121,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ lint: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'status') {
+    try {
+      const report = runStatus({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatStatusReport(report));
+      }
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ status: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -289,6 +310,79 @@ function formatLintReport(report: LintReport): string {
   }[report.summary];
   out.push(summaryLine);
   return out.join('\n') + '\n';
+}
+
+function formatStatusReport(report: StatusReport): string {
+  const out: string[] = [];
+  out.push(paint(`\nagentcohort`, 'bold', 'cyan') + paint(` v${report.version}`, 'gray'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  // Install
+  const a = report.install.agents;
+  const c = report.install.commands;
+  const agentLine = `${a.installed} installed (${a.bundled} bundled)`;
+  const cmdLine = `${c.installed} installed (${c.bundled} bundled)`;
+  const claudeMdLabel = {
+    present: paint('routing section present', 'green'),
+    missing: paint('not found', 'red'),
+    'no-routing-section': paint('present but no routing section', 'yellow'),
+  }[report.install.claudeMd];
+  const configLabel =
+    report.install.config === 'present'
+      ? '.agentcohort.json (custom)'
+      : paint('defaults', 'gray');
+  const openWolfLabel =
+    report.install.openWolf === 'active'
+      ? paint('active (.wolf/ found)', 'green')
+      : paint('not active', 'gray');
+
+  out.push(paint('Install:', 'bold'));
+  out.push(`  ${pad('Agents:', 18)} ${agentLine}`);
+  out.push(`  ${pad('Commands:', 18)} ${cmdLine}`);
+  out.push(`  ${pad('CLAUDE.md:', 18)} ${claudeMdLabel}`);
+  out.push(`  ${pad('Config:', 18)} ${configLabel}`);
+  out.push(`  ${pad('OpenWolf:', 18)} ${openWolfLabel}`);
+  out.push('');
+
+  // Models
+  out.push(
+    paint('Models', 'bold') +
+      (report.modelsSource === 'defaults' ? paint(' (defaults):', 'gray') : ':')
+  );
+  out.push(`  ${pad('premium:', 18)} ${report.models.premium}`);
+  out.push(`  ${pad('mid:', 18)} ${report.models.mid}`);
+  out.push(`  ${pad('cheap:', 18)} ${report.models.cheap}`);
+  out.push('');
+
+  // Gates
+  out.push(
+    paint('Gates', 'bold') +
+      (report.gatesSource === 'defaults' ? paint(' (defaults):', 'gray') : ':')
+  );
+  for (const [name, mode] of Object.entries(report.gates)) {
+    const modeColor =
+      mode === 'on' ? 'green' : mode === 'off' ? 'gray' : 'yellow';
+    out.push(`  ${pad(name + ':', 18)} ${paint(mode, modeColor)}`);
+  }
+  out.push('');
+
+  // Planned
+  if (report.planned.length > 0) {
+    out.push(paint('Coming in future versions', 'bold', 'gray'));
+    for (const f of report.planned) {
+      out.push(
+        paint(
+          `  ${pad(f.target, 8)} ${pad(f.name, 26)} ${f.blurb}`,
+          'gray'
+        )
+      );
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
+function pad(s: string, width: number): string {
+  return s.length >= width ? s : s + ' '.repeat(width - s.length);
 }
 
 // Auto-run only when executed as the bin (not when imported by tests/tooling).
