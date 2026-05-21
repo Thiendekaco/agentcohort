@@ -35,6 +35,12 @@ import {
   DiffStatus,
 } from './diffCmd';
 import {
+  runReset,
+  ResetResult,
+  ResetAction,
+  ResetDisposition,
+} from './reset';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -118,7 +124,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'list' &&
     args.command !== 'show' &&
     args.command !== 'search' &&
-    args.command !== 'diff'
+    args.command !== 'diff' &&
+    args.command !== 'reset'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -214,6 +221,111 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'reset') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ reset: missing <name>. Usage: agentcohort reset <name> | agent/<name> | command/<name>\n',
+          'red'
+        )
+      );
+      process.stderr.write(
+        paint(
+          '  Reset is targeted by design. For a project-wide refresh, use `agentcohort upgrade`.\n',
+          'gray'
+        )
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const existingConfig = loadConfig(cwd);
+    const models = resolveModels(existingConfig);
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    try {
+      // Dry-run first so the user always sees what would happen before
+      // any write occurs.
+      const preview = runReset({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        dryRun: true,
+        backup: args.backup,
+        models,
+      });
+      const isMutating =
+        preview.action.disposition === 'reset' ||
+        preview.action.disposition === 'installed';
+
+      if (args.dryRun || !isMutating) {
+        // The preview ran in dryRun=true internally to avoid side
+        // effects. For non-mutating outcomes (noop / refused-*) nothing
+        // would have written either way — surface the user's actual
+        // dryRun intent so the output is truthful.
+        const display: ResetResult = {
+          ...preview,
+          action: { ...preview.action, dryRun: args.dryRun },
+        };
+        if (args.json) {
+          process.stdout.write(JSON.stringify(display, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatResetResult(display));
+        }
+        return display.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatResetPreview(preview));
+        const proceed = await confirm({
+          message:
+            preview.action.disposition === 'reset'
+              ? `Overwrite ${preview.action.installedPath}?`
+              : `Install ${preview.action.installedPath}?`,
+          default: false,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        // Non-interactive without explicit consent: refuse to mutate.
+        process.stderr.write(
+          paint(
+            '✗ reset: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runReset({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        dryRun: false,
+        backup: args.backup,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatResetResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ reset: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -843,6 +955,91 @@ function formatSearchFile(f: SearchFileResult): string {
     out.push(paint(`  ${num}:`, 'gray') + ' ' + highlightLine(m));
   }
   return out.join('\n');
+}
+
+const RESET_DISP_COLOR: Record<ResetDisposition, 'green' | 'yellow' | 'red'> = {
+  noop: 'green',
+  reset: 'yellow',
+  installed: 'green',
+  'refused-extra': 'red',
+  'refused-not-found': 'red',
+  'refused-ambiguous': 'red',
+};
+
+function formatResetResult(result: ResetResult): string {
+  const a = result.action;
+  const out: string[] = [];
+  const head = `${a.dryRun ? '[dry-run] ' : ''}reset`;
+  const disp = paint(a.disposition, RESET_DISP_COLOR[a.disposition]);
+  out.push(paint(head, 'bold') + '  ' + (a.kind ? `${a.kind}/${a.name}` : a.name) + '  ' + disp);
+  switch (a.disposition) {
+    case 'noop':
+      out.push(paint(`  Already matches the bundled body — nothing to do.`, 'gray'));
+      break;
+    case 'reset':
+      out.push(paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray'));
+      if (a.backupPath) {
+        out.push(paint(`  Backup: ${a.backupPath}`, 'gray'));
+      }
+      break;
+    case 'installed':
+      out.push(paint(`  Bundled file installed fresh: ${a.installedPath}`, 'gray'));
+      break;
+    case 'refused-extra':
+      out.push(
+        paint(
+          `  ✗ This file is installed locally but NOT part of the bundled set — there is no bundled version to reset to.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    To remove a user-authored file, delete it manually from ${a.installedPath}.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-not-found':
+      out.push(paint(`  ✗ No agent or command matches '${result.query}'.`, 'red'));
+      break;
+    case 'refused-ambiguous':
+      out.push(
+        paint(
+          `  ✗ Name '${result.query}' matches both an agent AND a command. Use one of:`,
+          'red'
+        )
+      );
+      for (const c of result.candidates ?? []) {
+        out.push(paint(`    agentcohort reset ${c.kind}/${c.name}`, 'gray'));
+      }
+      break;
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatResetPreview(preview: ResetResult): string {
+  // Compact pre-confirm summary. The user has not yet authorized any
+  // write — keep it tight, action + paths only.
+  const a = preview.action;
+  const out: string[] = [];
+  out.push(
+    paint('About to reset:', 'bold') +
+      '  ' +
+      (a.kind ? `${a.kind}/${a.name}` : a.name)
+  );
+  out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  out.push(paint(`  Target: ${a.installedPath}`, 'gray'));
+  if (preview.action.disposition === 'reset' && a.oldText !== '') {
+    const diff = unifiedDiff(a.oldText, a.newText, {
+      oldLabel: `${a.installedPath} (your version)`,
+      newLabel: `${a.installedPath} (bundled)`,
+    });
+    if (diff !== '') {
+      out.push('');
+      out.push(diff.trimEnd());
+    }
+  }
+  return out.join('\n') + '\n';
 }
 
 const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
