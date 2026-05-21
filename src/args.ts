@@ -2,6 +2,8 @@ import { paint } from './logger';
 
 export interface ParsedArgs {
   command: string | null;
+  /** First positional after the command (e.g. `list agents` → "agents"). */
+  subcommand: string | null;
   yes: boolean;
   dryRun: boolean;
   force: boolean;
@@ -9,6 +11,24 @@ export interface ParsedArgs {
   reconfigure: boolean;
   json: boolean;
   diff: boolean;
+  /** Show the bundled template body untouched — pre-render, pre-stamp. */
+  raw: boolean;
+  /** Show the bundled template after render + stamp (what init/upgrade would write). */
+  bundled: boolean;
+  /** (search) Restrict to agent files. */
+  agents: boolean;
+  /** (search) Restrict to command files. */
+  commands: boolean;
+  /** (search) Case-sensitive literal match. */
+  exact: boolean;
+  /** (search) Treat the query as an ECMAScript regex. */
+  regex: boolean;
+  /** (uninstall) Keep `.agentcohort.json` instead of removing it. */
+  keepConfig: boolean;
+  /** (uninstall) Force-remove `.agentcohort.json` (overrides the safe-default keep). */
+  removeConfig: boolean;
+  /** (uninstall) Keep the CLAUDE.md routing section instead of stripping it. */
+  keepClaudeMd: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -23,6 +43,15 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--reconfigure': 'reconfigure',
   '--json': 'json',
   '--diff': 'diff',
+  '--raw': 'raw',
+  '--bundled': 'bundled',
+  '--agents': 'agents',
+  '--commands': 'commands',
+  '--exact': 'exact',
+  '--regex': 'regex',
+  '--keep-config': 'keepConfig',
+  '--remove-config': 'removeConfig',
+  '--keep-claude-md': 'keepClaudeMd',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -33,6 +62,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
 export function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     command: null,
+    subcommand: null,
     yes: false,
     dryRun: false,
     force: false,
@@ -40,6 +70,15 @@ export function parseArgs(argv: string[]): ParsedArgs {
     reconfigure: false,
     json: false,
     diff: false,
+    raw: false,
+    bundled: false,
+    agents: false,
+    commands: false,
+    exact: false,
+    regex: false,
+    keepConfig: false,
+    removeConfig: false,
+    keepClaudeMd: false,
     help: false,
     version: false,
     unknown: [],
@@ -54,6 +93,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
     } else if (parsed.command === null) {
       parsed.command = arg;
+    } else if (
+      (parsed.command === 'list' ||
+        parsed.command === 'show' ||
+        parsed.command === 'search' ||
+        parsed.command === 'diff' ||
+        parsed.command === 'reset' ||
+        parsed.command === 'completion') &&
+      parsed.subcommand === null
+    ) {
+      parsed.subcommand = arg;
     } else {
       parsed.unknown.push(arg);
     }
@@ -88,11 +137,59 @@ ${b('COMMANDS')}
                        command counts, CLAUDE.md routing presence,
                        resolved model tiers + gate modes, OpenWolf
                        activity, and planned upcoming features.
+  list [scope]         Enumerate what is available in the install. Scope
+                       is one of: agents (per-file install status + model
+                       tier), commands (slash-commands with descriptions),
+                       gates (review gates + current mode + when each
+                       pauses). Omit scope to show all three.
+  show <name>          Print the body of one installed or bundled
+                       agent / command. Use \`agent/<name>\` or
+                       \`command/<name>\` to disambiguate; when a name
+                       matches both kinds, both bodies are printed with
+                       clear headers. Defaults to the installed file
+                       (falls back to bundled with a banner when not
+                       installed).
+  search <keyword>     Grep across agent / command bodies. Default mode
+                       is case-insensitive substring; use --exact for a
+                       case-sensitive literal, or --regex for an
+                       ECMAScript pattern. Restrict to one kind with
+                       --agents / --commands. Searches installed files
+                       first; bundled-only files are still scanned so
+                       you can discover what's available pre-install.
+  reset <name>         Mutating. Revert ONE installed agent / command
+                       to the currently-bundled body (render + stamp).
+                       Targeted complement to \`upgrade\` for fixing a
+                       single hand-edited file without touching the
+                       rest of the install. Use \`agent/<name>\` or
+                       \`command/<name>\` to disambiguate. Refuses when
+                       the file is \`extra\` (no bundled version to
+                       reset to). Interactive prompt before any write;
+                       skip with --yes or --force.
+  diff [name]          Read-only diff between installed templates and
+                       the currently-bundled versions. With no name,
+                       prints a unified diff for every file that
+                       differs (missing / outdated / user-edited /
+                       unstamped). With a name (or \`agent/<name>\` /
+                       \`command/<name>\`), diffs just that file.
+                       Exits 0 when nothing differs, 1 when something
+                       does — CI-friendly.
   upgrade              Sync the project's .claude/ templates and CLAUDE.md
                        routing section to the bundled version. Refreshes
                        outdated files automatically and prompts before
                        overwriting any file the user has edited locally.
                        Preserves .agentcohort.json (models + gates).
+  completion <shell>   Emit a shell completion script for the named
+                       shell (bash, zsh, or pwsh). Pipe to your shell
+                       config — see README for one-liners. Re-run
+                       after upgrading the package to refresh the
+                       baked-in name lists.
+  uninstall            Mutating. Remove the bundled-set files from
+                       .claude/ and strip the agentcohort routing
+                       section from CLAUDE.md. NEVER deletes user-
+                       authored agents / commands. Defaults: section
+                       removed, .agentcohort.json kept (so a re-install
+                       picks up your customizations). Use
+                       --keep-claude-md / --remove-config to override.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -110,9 +207,27 @@ ${b('OPTIONS')}
   --diff               (upgrade only) Print the unified diff of every
                        file that would be refreshed or overwritten, in
                        addition to the per-conflict prompt's diff view.
-  --json               (doctor, lint, status) Emit the report as JSON
-                       instead of human-readable text. Exit code is the
-                       same in both modes.
+  --raw                (show only) Print the bundled template untouched
+                       — pre-render, pre-stamp. Source-of-truth view.
+  --bundled            (show only) Print the bundled template after
+                       render + stamp (= exactly what \`init\` / \`upgrade\`
+                       would write). Useful to compare against an
+                       edited installed copy.
+  --agents             (search, diff) Restrict the operation to agent files.
+  --commands           (search, diff) Restrict the operation to command files.
+  --exact              (search only) Case-sensitive literal match
+                       instead of the case-insensitive default.
+  --regex              (search only) Treat the query as an ECMAScript
+                       regex (per-line match, /g flag implied).
+  --keep-config        (uninstall only) Keep .agentcohort.json instead
+                       of prompting / removing it.
+  --remove-config      (uninstall only) Remove .agentcohort.json
+                       (overrides the safe-default keep).
+  --keep-claude-md     (uninstall only) Keep the CLAUDE.md routing
+                       section instead of stripping it.
+  --json               (doctor, lint, status, list, show, search, diff)
+                       Emit the report as JSON instead of human-readable
+                       text. Exit code is the same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 

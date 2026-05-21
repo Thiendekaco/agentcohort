@@ -10,6 +10,49 @@ import { runDoctor, DoctorReport, Severity } from './doctor';
 import { runLint, LintReport, LintSeverity } from './lint';
 import { runStatus, StatusReport } from './status';
 import {
+  runList,
+  ListReport,
+  ListScope,
+  ListAgentEntry,
+  ListCommandEntry,
+  ListGateEntry,
+  ListEntryStatus,
+} from './list';
+import { runShow, ShowResult, ShowMatch, ShowVariant } from './show';
+import {
+  runSearch,
+  SearchResult,
+  SearchMode,
+  SearchScope,
+  SearchFileResult,
+  SearchLineMatch,
+} from './search';
+import {
+  runDiff,
+  DiffResult,
+  DiffScope,
+  DiffFileEntry,
+  DiffStatus,
+} from './diffCmd';
+import {
+  runReset,
+  ResetResult,
+  ResetAction,
+  ResetDisposition,
+} from './reset';
+import {
+  runUninstall,
+  UninstallResult,
+  UninstallEntry,
+  UninstallActionKind,
+} from './uninstall';
+import {
+  buildContext as buildCompletionContext,
+  generateCompletion,
+  COMPLETION_SHELLS,
+  CompletionShell,
+} from './completion';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -89,7 +132,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'doctor' &&
     args.command !== 'lint' &&
     args.command !== 'status' &&
-    args.command !== 'upgrade'
+    args.command !== 'upgrade' &&
+    args.command !== 'list' &&
+    args.command !== 'show' &&
+    args.command !== 'search' &&
+    args.command !== 'diff' &&
+    args.command !== 'reset' &&
+    args.command !== 'uninstall' &&
+    args.command !== 'completion'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -149,6 +199,416 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ status: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'list') {
+    const sub = args.subcommand;
+    if (
+      sub !== null &&
+      sub !== 'agents' &&
+      sub !== 'commands' &&
+      sub !== 'gates'
+    ) {
+      process.stderr.write(
+        paint(
+          `✗ list: unknown scope '${sub}'. Use one of: agents, commands, gates (or omit for all).\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    const scope: ListScope = (sub ?? 'all') as ListScope;
+    try {
+      const report = runList({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        scope,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatListReport(report));
+      }
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'completion') {
+    const shell = args.subcommand;
+    if (shell === null || shell === '') {
+      process.stderr.write(
+        paint(
+          `✗ completion: missing <shell>. Usage: agentcohort completion ${COMPLETION_SHELLS.join(' | ')}\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    if (!COMPLETION_SHELLS.includes(shell as CompletionShell)) {
+      process.stderr.write(
+        paint(
+          `✗ completion: unknown shell '${shell}'. Use one of: ${COMPLETION_SHELLS.join(', ')}.\n`,
+          'red'
+        )
+      );
+      return 1;
+    }
+    try {
+      const ctx = buildCompletionContext(getTemplatesDir());
+      const script = generateCompletion(shell as CompletionShell, ctx);
+      process.stdout.write(script);
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ completion: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'uninstall') {
+    if (args.keepConfig && args.removeConfig) {
+      process.stderr.write(
+        paint('✗ uninstall: --keep-config and --remove-config are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+
+    // Decisions: explicit flags > prompts > safe defaults.
+    // Defaults under --yes / non-interactive:
+    //   - section: REMOVE (uninstall implies full removal of agentcohort presence)
+    //   - config:  KEEP   (preserves customizations for a future re-install)
+    let removeClaudeSection = !args.keepClaudeMd;
+    let removeConfigDecision = args.removeConfig
+      ? true
+      : args.keepConfig
+      ? false
+      : false; // safe default
+    try {
+      // Always preview first so the user sees the full plan.
+      const preview = runUninstall({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        dryRun: true,
+        backup: args.backup,
+        removeClaudeSection,
+        removeConfig: removeConfigDecision,
+        now: () => new Date(),
+      });
+
+      if (preview.exitCode === 1) {
+        // Nothing to uninstall.
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            paint('Nothing to uninstall — no bundled files, section, or config found.\n', 'gray')
+          );
+        }
+        return 0;
+      }
+
+      if (args.dryRun) {
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatUninstallResult(preview));
+        }
+        return 0;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatUninstallPlan(preview, {
+          removeClaudeSection,
+          removeConfig: removeConfigDecision,
+        }));
+        // Prompt for config when not explicitly flagged.
+        if (!args.keepConfig && !args.removeConfig && preview.entries.some((e) => e.kind === 'kept-config')) {
+          const wantRemoveConfig = await confirm({
+            message:
+              'Also remove `.agentcohort.json` (your customized models / gates)?',
+            default: false,
+          });
+          if (wantRemoveConfig) removeConfigDecision = true;
+        }
+        const proceed = await confirm({
+          message: 'Proceed with uninstall?',
+          default: false,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ uninstall: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runUninstall({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        dryRun: false,
+        backup: args.backup,
+        removeClaudeSection,
+        removeConfig: removeConfigDecision,
+        now: () => new Date(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatUninstallResult(result));
+      }
+      return result.exitCode === 1 ? 0 : result.exitCode; // exit 1 already handled above
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'reset') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ reset: missing <name>. Usage: agentcohort reset <name> | agent/<name> | command/<name>\n',
+          'red'
+        )
+      );
+      process.stderr.write(
+        paint(
+          '  Reset is targeted by design. For a project-wide refresh, use `agentcohort upgrade`.\n',
+          'gray'
+        )
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const existingConfig = loadConfig(cwd);
+    const models = resolveModels(existingConfig);
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    try {
+      // Dry-run first so the user always sees what would happen before
+      // any write occurs.
+      const preview = runReset({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        dryRun: true,
+        backup: args.backup,
+        models,
+      });
+      const isMutating =
+        preview.action.disposition === 'reset' ||
+        preview.action.disposition === 'installed';
+
+      if (args.dryRun || !isMutating) {
+        // The preview ran in dryRun=true internally to avoid side
+        // effects. For non-mutating outcomes (noop / refused-*) nothing
+        // would have written either way — surface the user's actual
+        // dryRun intent so the output is truthful.
+        const display: ResetResult = {
+          ...preview,
+          action: { ...preview.action, dryRun: args.dryRun },
+        };
+        if (args.json) {
+          process.stdout.write(JSON.stringify(display, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatResetResult(display));
+        }
+        return display.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatResetPreview(preview));
+        const proceed = await confirm({
+          message:
+            preview.action.disposition === 'reset'
+              ? `Overwrite ${preview.action.installedPath}?`
+              : `Install ${preview.action.installedPath}?`,
+          default: false,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        // Non-interactive without explicit consent: refuse to mutate.
+        process.stderr.write(
+          paint(
+            '✗ reset: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runReset({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        dryRun: false,
+        backup: args.backup,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatResetResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ reset: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'diff') {
+    if (args.agents && args.commands) {
+      process.stderr.write(
+        paint('✗ diff: --agents and --commands are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const scope: DiffScope = args.agents
+      ? 'agents'
+      : args.commands
+      ? 'commands'
+      : 'all';
+    try {
+      const existingConfig = loadConfig(process.cwd());
+      const models = resolveModels(existingConfig);
+      const result = runDiff({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query: args.subcommand,
+        scope,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatDiffResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ diff: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'search') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint('✗ search: missing <keyword>. Usage: agentcohort search <keyword> [--agents|--commands] [--exact|--regex]\n', 'red')
+      );
+      return 1;
+    }
+    if (args.agents && args.commands) {
+      process.stderr.write(
+        paint('✗ search: --agents and --commands are mutually exclusive (omit both to search both).\n', 'red')
+      );
+      return 1;
+    }
+    if (args.exact && args.regex) {
+      process.stderr.write(
+        paint('✗ search: --exact and --regex are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const scope: SearchScope = args.agents
+      ? 'agents'
+      : args.commands
+      ? 'commands'
+      : 'all';
+    const mode: SearchMode = args.regex ? 'regex' : args.exact ? 'exact' : 'substring';
+    try {
+      const result = runSearch({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query,
+        scope,
+        mode,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatSearchResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ search: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'show') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ show: missing <name>. Usage: agentcohort show <name> | agent/<name> | command/<name>\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    if (args.raw && args.bundled) {
+      process.stderr.write(
+        paint('✗ show: --raw and --bundled are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const variant: ShowVariant = args.raw ? 'raw' : args.bundled ? 'bundled' : 'default';
+    try {
+      const existingConfig = loadConfig(process.cwd());
+      const models = resolveModels(existingConfig);
+      const result = runShow({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query,
+        variant,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatShowResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ show: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -446,6 +906,453 @@ function formatStatusReport(report: StatusReport): string {
 
 function pad(s: string, width: number): string {
   return s.length >= width ? s : s + ' '.repeat(width - s.length);
+}
+
+function formatListReport(report: ListReport): string {
+  const out: string[] = [];
+  out.push(paint('\nagentcohort list', 'bold', 'cyan'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  if (report.agents !== undefined) {
+    out.push(formatAgentsBlock(report.agents));
+  }
+  if (report.commands !== undefined) {
+    if (out.length > 2) out.push('');
+    out.push(formatCommandsBlock(report.commands));
+  }
+  if (report.gates !== undefined) {
+    if (out.length > 2) out.push('');
+    out.push(formatGatesBlock(report.gates));
+  }
+  return out.join('\n') + '\n';
+}
+
+const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+  installed: 'green',
+  outdated: 'yellow',
+  'user-edited': 'yellow',
+  unstamped: 'yellow',
+  missing: 'red',
+  extra: 'gray',
+};
+
+function statusBadge(status: ListEntryStatus): string {
+  return paint(status, STATUS_COLOR[status]);
+}
+
+function formatAgentsBlock(entries: ListAgentEntry[]): string {
+  const out: string[] = [];
+  const installed = entries.filter((e) => e.status === 'installed').length;
+  const total = entries.filter((e) => e.status !== 'extra').length;
+  out.push(
+    paint(`Agents `, 'bold') +
+      paint(`(${installed}/${total} installed)`, 'gray')
+  );
+  if (entries.length === 0) {
+    out.push(paint('  (none — bundled directory missing)', 'gray'));
+    return out.join('\n');
+  }
+  const nameW = Math.max(...entries.map((e) => e.name.length), 8);
+  const tierW = 14;
+  for (const e of entries) {
+    const tierLabel = e.tier
+      ? `${e.modelRaw} (${e.tier})`
+      : e.modelRaw || '—';
+    out.push(
+      `  ${pad(e.name, nameW)}  ${pad(tierLabel, tierW)}  ${statusBadge(e.status)}`
+    );
+    if (e.description !== '') {
+      out.push(paint(`    └─ ${truncate(e.description, 96)}`, 'gray'));
+    }
+  }
+  return out.join('\n');
+}
+
+function formatCommandsBlock(entries: ListCommandEntry[]): string {
+  const out: string[] = [];
+  const installed = entries.filter((e) => e.status === 'installed').length;
+  const total = entries.filter((e) => e.status !== 'extra').length;
+  out.push(
+    paint(`Commands `, 'bold') +
+      paint(`(${installed}/${total} installed)`, 'gray')
+  );
+  if (entries.length === 0) {
+    out.push(paint('  (none — bundled directory missing)', 'gray'));
+    return out.join('\n');
+  }
+  const invW = Math.max(...entries.map((e) => e.invocation.length), 10);
+  for (const e of entries) {
+    out.push(
+      `  ${pad(e.invocation, invW)}  ${statusBadge(e.status)}` +
+        (e.argumentHint ? paint(`  ${e.argumentHint}`, 'gray') : '')
+    );
+    if (e.description !== '') {
+      out.push(paint(`    └─ ${truncate(e.description, 96)}`, 'gray'));
+    }
+  }
+  return out.join('\n');
+}
+
+function formatGatesBlock(entries: ListGateEntry[]): string {
+  const out: string[] = [];
+  out.push(paint('Gates', 'bold'));
+  const nameW = Math.max(...entries.map((e) => e.name.length), 8);
+  for (const e of entries) {
+    const modeColor =
+      e.mode === 'on' ? 'green' : e.mode === 'off' ? 'gray' : 'yellow';
+    const srcLabel = e.source === 'config' ? '(config)' : '(default)';
+    out.push(
+      `  ${pad(e.name, nameW)}  ${paint(pad(e.mode, 6), modeColor)}  ${paint(srcLabel, 'gray')}`
+    );
+    out.push(paint(`    └─ ${e.blurb}`, 'gray'));
+  }
+  out.push(
+    paint(
+      'Modes: on (always pause) · off (never) · auto (pause when Tier 4 / escalation keyword)',
+      'gray'
+    )
+  );
+  return out.join('\n');
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '…';
+}
+
+function formatShowResult(result: ShowResult): string {
+  if (result.notFound) {
+    const hint = result.restrictTo
+      ? `No ${result.restrictTo} matches '${result.query}'.`
+      : `No agent or command matches '${result.query}'.`;
+    return paint(`✗ ${hint}\n`, 'red');
+  }
+  const out: string[] = [];
+  for (let i = 0; i < result.matches.length; i += 1) {
+    if (i > 0) out.push('');
+    out.push(formatShowMatch(result.matches[i]!));
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatShowMatch(m: ShowMatch): string {
+  const out: string[] = [];
+  const kindLabel = m.kind === 'agent' ? 'Agent' : 'Command';
+  const sourceLabel = {
+    installed: 'installed',
+    'bundled-rendered': 'bundled (rendered + stamped)',
+    'bundled-raw': 'bundled (raw, pre-render)',
+  }[m.source];
+  out.push(
+    paint(`── ${kindLabel}: ${m.name} ──`, 'bold', 'cyan') +
+      paint(`  ${sourceLabel}`, 'gray')
+  );
+  out.push(paint(m.path, 'gray'));
+  if (m.fallback) {
+    out.push(
+      paint(
+        '! Not installed locally — showing the bundled body. Run `agentcohort init` (or `upgrade`) to install.',
+        'yellow'
+      )
+    );
+  }
+  if (m.source === 'installed' && m.status !== undefined && m.status !== 'no-bundled') {
+    const statusLabel = {
+      unchanged: paint('integrity: unchanged', 'green'),
+      outdated: paint('integrity: outdated (bundled has moved on)', 'yellow'),
+      'user-edited': paint('integrity: user-edited (body diverges from stamp)', 'yellow'),
+      unstamped: paint('integrity: unstamped (pre-0.4.0 install)', 'yellow'),
+    }[m.status];
+    out.push(statusLabel);
+  }
+  out.push('');
+  out.push(m.content.trimEnd());
+  return out.join('\n');
+}
+
+function formatSearchResult(result: SearchResult): string {
+  if (result.note !== '') {
+    return paint(`✗ search: ${result.note}\n`, 'red');
+  }
+  if (result.files.length === 0) {
+    const scopeLabel =
+      result.scope === 'all' ? 'agents + commands' : result.scope;
+    return (
+      paint(
+        `No matches for ${JSON.stringify(result.query)} in ${scopeLabel} ` +
+          `(${result.mode}).\n`,
+        'gray'
+      )
+    );
+  }
+  const out: string[] = [];
+  for (const f of result.files) {
+    out.push(formatSearchFile(f));
+    out.push('');
+  }
+  const filesLabel =
+    result.totalFiles === 1 ? '1 file' : `${result.totalFiles} files`;
+  const matchesLabel =
+    result.totalMatches === 1 ? '1 match' : `${result.totalMatches} matches`;
+  out.push(
+    paint(`${matchesLabel} in ${filesLabel}`, 'bold') +
+      paint(`  (${result.mode}, scope: ${result.scope})`, 'gray')
+  );
+  return out.join('\n') + '\n';
+}
+
+function formatSearchFile(f: SearchFileResult): string {
+  const kindLabel = f.kind === 'agent' ? 'agents' : 'commands';
+  const sourceTag = f.source === 'bundled' ? paint('  [bundled]', 'gray') : '';
+  const out: string[] = [];
+  out.push(paint(`${kindLabel}/${f.name}.md`, 'bold', 'cyan') + sourceTag);
+  // Compute the gutter width from the largest line number so the
+  // numbers right-align across all rows of this file.
+  const maxLine = f.matches[f.matches.length - 1]?.line ?? 0;
+  const gutter = String(maxLine).length;
+  for (const m of f.matches) {
+    const num = String(m.line).padStart(gutter, ' ');
+    out.push(paint(`  ${num}:`, 'gray') + ' ' + highlightLine(m));
+  }
+  return out.join('\n');
+}
+
+function formatUninstallPlan(
+  preview: UninstallResult,
+  decisions: { removeClaudeSection: boolean; removeConfig: boolean }
+): string {
+  const s = preview.summary;
+  const out: string[] = [];
+  out.push(paint('\nagentcohort uninstall — plan', 'bold', 'cyan'));
+  out.push(paint(`Project: ${preview.cwd}\n`, 'gray'));
+  out.push(
+    paint('Will remove:', 'bold') +
+      `  ${s.removedFiles} bundled file(s)` +
+      (decisions.removeClaudeSection ? ', CLAUDE.md routing section' : '') +
+      (decisions.removeConfig ? ', .agentcohort.json' : '')
+  );
+  out.push(
+    paint('Will keep:', 'bold') +
+      `   ${s.keptUserFiles} user-authored file(s)` +
+      (decisions.removeClaudeSection ? '' : ', CLAUDE.md routing section') +
+      (decisions.removeConfig ? '' : ', .agentcohort.json (if present)')
+  );
+  out.push('');
+  return out.join('\n');
+}
+
+function formatUninstallResult(result: UninstallResult): string {
+  const out: string[] = [];
+  const head = result.dryRun ? 'Dry run' : 'Uninstall';
+  out.push(paint(`\n${head} complete`, 'bold', 'green'));
+  out.push(paint(`Project: ${result.cwd}\n`, 'gray'));
+  const tag = result.dryRun ? '[dry-run] ' : '';
+  for (const e of result.entries) {
+    out.push(formatUninstallEntry(e, tag));
+  }
+  const s = result.summary;
+  const segs: string[] = [];
+  segs.push(`${s.removedFiles} removed`);
+  segs.push(`${s.keptUserFiles} kept (user)`);
+  if (s.sectionRemoved) segs.push('CLAUDE.md section stripped');
+  if (s.configRemoved) segs.push('.agentcohort.json removed');
+  if (s.backupCount > 0) segs.push(`${s.backupCount} backup(s)`);
+  out.push('');
+  out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  return out.join('\n') + '\n';
+}
+
+function formatUninstallEntry(e: UninstallEntry, tag: string): string {
+  const label: Record<UninstallActionKind, string> = {
+    'removed-bundled-file': paint('remove', 'red'),
+    'kept-user-file': paint('keep   (user)', 'gray'),
+    'removed-routing-section': paint('strip section', 'red'),
+    'kept-claude-md': paint('keep   (claude.md)', 'gray'),
+    'removed-config': paint('remove', 'red'),
+    'kept-config': paint('keep   (config)', 'gray'),
+  };
+  const bk = e.backupPath ? paint(`  (backup: ${e.backupPath})`, 'gray') : '';
+  return `  ${tag}${label[e.kind]}  ${e.path}${bk}`;
+}
+
+const RESET_DISP_COLOR: Record<ResetDisposition, 'green' | 'yellow' | 'red'> = {
+  noop: 'green',
+  reset: 'yellow',
+  installed: 'green',
+  'refused-extra': 'red',
+  'refused-not-found': 'red',
+  'refused-ambiguous': 'red',
+};
+
+function formatResetResult(result: ResetResult): string {
+  const a = result.action;
+  const out: string[] = [];
+  const head = `${a.dryRun ? '[dry-run] ' : ''}reset`;
+  const disp = paint(a.disposition, RESET_DISP_COLOR[a.disposition]);
+  out.push(paint(head, 'bold') + '  ' + (a.kind ? `${a.kind}/${a.name}` : a.name) + '  ' + disp);
+  switch (a.disposition) {
+    case 'noop':
+      out.push(paint(`  Already matches the bundled body — nothing to do.`, 'gray'));
+      break;
+    case 'reset':
+      out.push(paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray'));
+      if (a.backupPath) {
+        out.push(paint(`  Backup: ${a.backupPath}`, 'gray'));
+      }
+      break;
+    case 'installed':
+      out.push(paint(`  Bundled file installed fresh: ${a.installedPath}`, 'gray'));
+      break;
+    case 'refused-extra':
+      out.push(
+        paint(
+          `  ✗ This file is installed locally but NOT part of the bundled set — there is no bundled version to reset to.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    To remove a user-authored file, delete it manually from ${a.installedPath}.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-not-found':
+      out.push(paint(`  ✗ No agent or command matches '${result.query}'.`, 'red'));
+      break;
+    case 'refused-ambiguous':
+      out.push(
+        paint(
+          `  ✗ Name '${result.query}' matches both an agent AND a command. Use one of:`,
+          'red'
+        )
+      );
+      for (const c of result.candidates ?? []) {
+        out.push(paint(`    agentcohort reset ${c.kind}/${c.name}`, 'gray'));
+      }
+      break;
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatResetPreview(preview: ResetResult): string {
+  // Compact pre-confirm summary. The user has not yet authorized any
+  // write — keep it tight, action + paths only.
+  const a = preview.action;
+  const out: string[] = [];
+  out.push(
+    paint('About to reset:', 'bold') +
+      '  ' +
+      (a.kind ? `${a.kind}/${a.name}` : a.name)
+  );
+  out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  out.push(paint(`  Target: ${a.installedPath}`, 'gray'));
+  if (preview.action.disposition === 'reset' && a.oldText !== '') {
+    const diff = unifiedDiff(a.oldText, a.newText, {
+      oldLabel: `${a.installedPath} (your version)`,
+      newLabel: `${a.installedPath} (bundled)`,
+    });
+    if (diff !== '') {
+      out.push('');
+      out.push(diff.trimEnd());
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
+const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+  unchanged: 'green',
+  outdated: 'yellow',
+  'user-edited': 'yellow',
+  unstamped: 'yellow',
+  missing: 'red',
+  extra: 'gray',
+};
+
+function formatDiffResult(result: DiffResult): string {
+  if (result.notFound) {
+    const which = result.restrictTo ?? 'agent or command';
+    return paint(
+      `✗ No ${which} matches '${result.query}'.\n`,
+      'red'
+    );
+  }
+  if (result.files.length === 0) {
+    const label = result.query
+      ? `'${result.query}'`
+      : result.scope === 'all'
+      ? 'all files'
+      : result.scope;
+    return paint(`✓ No differences (${label}). ${result.unchangedCount} unchanged.\n`, 'green');
+  }
+  const out: string[] = [];
+  for (const f of result.files) {
+    out.push(formatDiffEntry(f));
+  }
+  // Summary footer.
+  const counts = new Map<DiffStatus, number>();
+  for (const f of result.files) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
+  const segs: string[] = [];
+  for (const [s, n] of counts) segs.push(`${n} ${s}`);
+  if (result.unchangedCount > 0) segs.push(`${result.unchangedCount} unchanged`);
+  out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  return out.join('\n') + '\n';
+}
+
+function formatDiffEntry(f: DiffFileEntry): string {
+  const kindLabel = f.kind === 'agent' ? 'agents' : 'commands';
+  const head =
+    paint(`── ${kindLabel}/${f.name}.md ──`, 'bold', 'cyan') +
+    '  ' +
+    paint(f.status, DIFF_STATUS_COLOR[f.status]);
+  if (f.status === 'extra') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  (installed locally but not part of the bundled set — nothing to diff against)`,
+        'gray'
+      ) +
+      '\n'
+    );
+  }
+  // For `missing` the unifiedDiff is "(not installed)" -> bundled body.
+  // It can be long but printing it shows exactly what would be installed.
+  return head + '\n' + colorizeDiff(f.diff) + '\n';
+}
+
+function colorizeDiff(diff: string): string {
+  const out: string[] = [];
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      out.push(paint(line, 'bold'));
+    } else if (line.startsWith('@@')) {
+      out.push(paint(line, 'cyan'));
+    } else if (line.startsWith('+')) {
+      out.push(paint(line, 'green'));
+    } else if (line.startsWith('-')) {
+      out.push(paint(line, 'red'));
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
+
+function highlightLine(m: SearchLineMatch): string {
+  // Render the line with the matched ranges painted. Offsets are
+  // already half-open + non-overlapping (matchers advance past each
+  // hit before searching for the next), so a single linear walk is
+  // enough.
+  const out: string[] = [];
+  let cursor = 0;
+  for (const { start, end } of m.offsets) {
+    if (start > cursor) out.push(m.content.slice(cursor, start));
+    out.push(paint(m.content.slice(start, end), 'bold', 'yellow'));
+    cursor = end;
+  }
+  if (cursor < m.content.length) out.push(m.content.slice(cursor));
+  return out.join('');
 }
 
 async function upgradeResolver(

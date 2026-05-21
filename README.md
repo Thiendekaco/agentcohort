@@ -190,6 +190,276 @@ Coming in future versions
 The "Coming in future versions" block is a static roadmap pointer, not
 a release commitment. Targets may shift.
 
+### Discovery — `agentcohort list`
+
+Enumerate what is available in the current install. Where `status`
+summarizes counts, `list` shows the items themselves — useful when you
+want to know which agent handles what, which slash-command to invoke,
+or what each review gate guards.
+
+```bash
+agentcohort list             # everything (agents + commands + gates)
+agentcohort list agents      # bundled agents + per-file install status + model tier
+agentcohort list commands    # slash-commands + descriptions + install status
+agentcohort list gates       # review gates + current mode + when each pauses
+agentcohort list --json      # any of the above, machine-readable
+```
+
+Example output (`agentcohort list agents`):
+
+```text
+Agents (16/16 installed)
+  dispatcher            haiku (cheap)   installed
+    └─ Read-only task classifier. Reads the user's request, classifies it into a routing tier…
+  feature-implementer   opus (premium)  installed
+    └─ Implement an approved plan exactly. No scope expansion, no opportunistic refactors…
+  solution-architect    opus (premium)  user-edited
+    └─ Propose 2–3 implementation approaches with explicit trade-offs…
+  …
+```
+
+Per-file status is the same 4-state integrity verdict that powers
+`doctor` and `upgrade` (`installed` / `outdated` / `user-edited` /
+`unstamped`), plus `missing` (bundled but not installed) and `extra`
+(installed locally but not part of the bundled set — user-authored
+agents land here). Gate entries label their mode source as `(config)`
+when `.agentcohort.json` overrides the default and `(default)` otherwise.
+
+### Inspect one file — `agentcohort show <name>`
+
+Pairs with `list`: where `list` enumerates names, `show` prints one
+body so you can read the actual prompt without opening the file
+manually.
+
+```bash
+agentcohort show dispatcher           # auto-pick agent or command
+agentcohort show agent/dispatcher     # disambiguate (also: agents/dispatcher)
+agentcohort show command/auto-flow    # disambiguate (also: commands/auto-flow)
+agentcohort show dispatcher --raw     # bundled body, pre-render, pre-stamp
+agentcohort show dispatcher --bundled # bundled body, render + stamp applied
+agentcohort show dispatcher --json    # JSON wrapper with metadata
+```
+
+Defaults to the **installed** file (truthful — exactly what Claude
+Code reads). When the file is not installed locally, falls back to
+the bundled body with a banner so you can still preview what would
+land. When a name matches both an agent and a command (a user-authored
+agent overshadowing a slash-command name, for instance), `show`
+prints **both** with clear `── Agent: <name> ──` / `── Command: <name> ──`
+headers.
+
+Integrity verdict is shown for installed files so you know at a glance
+whether the body still matches its stamp (`unchanged` / `outdated` /
+`user-edited` / `unstamped`).
+
+### Search by content — `agentcohort search <keyword>`
+
+Grep across agent + command bodies. Pairs with `list` (enumerate) and
+`show` (inspect by name) — `search` finds the file by what it
+*contains*. Useful for "which agent handles migrations?" or "find every
+mention of `escalation keyword`."
+
+```bash
+agentcohort search dispatcher              # case-insensitive substring (default)
+agentcohort search "exit code" --exact     # case-sensitive literal
+agentcohort search "^model:\s+\S+$" --regex  # ECMAScript regex per-line
+agentcohort search dispatcher --agents     # scope to agent files
+agentcohort search dispatcher --commands   # scope to command files
+agentcohort search dispatcher --json       # JSON for tooling
+```
+
+Output is ripgrep-style — file group, line number, line content with
+the match highlighted:
+
+```text
+agents/dispatcher.md
+   3:  description: Read-only task classifier...
+  12:  the dispatcher returns a structured plan with: tier, pipeline...
+
+commands/auto-flow.md
+  18:  Invoke the `dispatcher` subagent on `$ARGUMENTS`.
+
+2 matches in 2 files  (substring, scope: all)
+```
+
+**File source:** installed files take precedence when both an installed
+copy and a bundled template exist (so your edits show up). When a file
+is bundled-only — e.g. you haven't installed yet — `search` still scans
+the bundled body and tags the result `[bundled]`. This means
+`agentcohort search …` works as a discovery tool *before* `init`.
+
+Exit codes: **0** at least one match, **1** no matches (or invalid regex
+pattern with a friendly note), **2** internal failure.
+
+### Inspect drift — `agentcohort diff [name]`
+
+CI-friendly read-only diff between **installed** templates and the
+currently **bundled** versions. Unlike `upgrade --dry-run --diff` —
+which is action-oriented — `diff` is pure inspection: no policy
+decisions, no prompts, no concept of "kept" or "applied". Just: what
+is different right now?
+
+```bash
+agentcohort diff                       # diff every file that differs
+agentcohort diff dispatcher            # diff one file by name
+agentcohort diff agent/dispatcher      # disambiguate (also: agents/...)
+agentcohort diff command/auto-flow     # disambiguate (also: commands/...)
+agentcohort diff --agents              # scope to agent files
+agentcohort diff --commands            # scope to command files
+agentcohort diff --json                # JSON for tooling / CI
+```
+
+Per-file `status`:
+
+| Status | Meaning |
+|---|---|
+| `unchanged` | installed body matches the current bundled body (silent — not included in `files`) |
+| `outdated` | installed stamp matches an older bundled body |
+| `user-edited` | installed body diverges from its stamp |
+| `unstamped` | installed has no stamp (pre-0.4.0) |
+| `missing` | bundled but not installed (diff shows the full bundled body) |
+| `extra` | installed locally but not in the bundled set (no comparison possible) |
+
+Exit codes are wired for CI:
+
+| Code | Meaning |
+|---|---|
+| 0 | No differences — `unchanged` for everything in scope |
+| 1 | At least one difference (or the named file does not exist) |
+| 2 | Internal failure |
+
+Drop `agentcohort diff` into a pre-merge check to fail the build when a
+contributor edits a bundled template in `.claude/` without going
+through `agentcohort upgrade`.
+
+### Revert one file — `agentcohort reset <name>`
+
+Targeted mutating command — revert ONE installed agent / command to
+the currently-bundled body (rendered for your configured tiers,
+re-stamped). Complements `upgrade` (project-wide refresh) when you
+want to undo edits to a single file without touching the rest.
+
+```bash
+agentcohort reset dispatcher              # prompts before writing
+agentcohort reset agent/dispatcher        # disambiguate (also: agents/...)
+agentcohort reset command/auto-flow       # disambiguate (also: commands/...)
+agentcohort reset dispatcher --dry-run    # preview, no write
+agentcohort reset dispatcher --backup     # back up before overwriting
+agentcohort reset dispatcher --yes        # skip confirm (non-interactive ok)
+agentcohort reset dispatcher --force      # alias of --yes for this command
+```
+
+**Safety policy:**
+
+- **No bulk reset.** The user must name a file. For project-wide
+  refresh, use `agentcohort upgrade`.
+- **Refuses `extra` files** (installed locally but not part of the
+  bundled set — typically user-authored agents). There's no bundled
+  version to reset to; deleting a user-authored file is a manual
+  decision.
+- **Refuses ambiguity.** When a bare name matches both an agent and
+  a command, reset refuses and prompts for `agent/<name>` or
+  `command/<name>`.
+- **Interactive confirm by default.** A pre-confirm diff is printed so
+  you see exactly what will change. Skip with `--yes` / `--force`.
+- **Non-interactive without `--yes` refuses to write** — protects CI
+  and pipes from accidental destructive runs.
+
+Per-file outcomes:
+
+| `disposition` | Meaning |
+|---|---|
+| `noop` | already matches bundled — nothing to do |
+| `reset` | installed file was overwritten (was outdated / user-edited / unstamped) |
+| `installed` | bundled file was not present locally; written fresh |
+| `refused-extra` | installed locally but not in bundled set |
+| `refused-not-found` | no agent / command matches |
+| `refused-ambiguous` | bare name matches both kinds — needs `agent/` or `command/` prefix |
+
+Exit codes: **0** success (noop / reset / installed), **1** refused
+or named target not found, **2** internal failure, **130** user
+cancelled the interactive confirm.
+
+### Clean removal — `agentcohort uninstall`
+
+Mutating, destructive — remove the bundled-set files from `.claude/`
+and strip the agentcohort routing section from CLAUDE.md. Designed
+so re-running `agentcohort init` later picks up exactly where you
+left off (because `.agentcohort.json` is preserved by default).
+
+```bash
+agentcohort uninstall                  # interactive — prompts before writing
+agentcohort uninstall --dry-run        # preview the plan, no writes
+agentcohort uninstall --backup         # back up every file before removing
+agentcohort uninstall --keep-claude-md # do NOT strip the routing section
+agentcohort uninstall --remove-config  # ALSO remove .agentcohort.json
+agentcohort uninstall --keep-config    # explicit: keep .agentcohort.json (default)
+agentcohort uninstall --yes            # skip the confirm (non-interactive ok)
+```
+
+**Strong safety contract:**
+
+- **User-authored files are NEVER touched.** A file in
+  `.claude/agents/` whose name is not in the bundled set is recorded
+  as `kept-user-file` and left alone. This is non-negotiable — there
+  is no flag to delete user-authored files.
+- **CLAUDE.md content outside the routing section is preserved.**
+  Only the agentcohort section is removed; the rest of the file
+  keeps its byte content (modulo whitespace collapsing at the section
+  boundary).
+- **Directories are not removed**, even if empty after the run. You
+  own `.claude/` — agentcohort is just a tenant.
+- **Backups** (when enabled) are per-file `<file>.backup-YYYYMMDD-
+  HHMMSS`, same convention as `upgrade` / `reset`.
+- **Non-interactive without `--yes` refuses to write.** Protects CI
+  and pipes from accidental destructive runs.
+
+**Default decisions under `--yes` / non-interactive:**
+
+- CLAUDE.md routing section: **remove** (uninstall implies full
+  removal of agentcohort presence)
+- `.agentcohort.json`: **keep** (preserves your customized models /
+  gates so a future re-install is one command away)
+
+Override either with `--keep-claude-md` / `--remove-config` /
+`--keep-config`.
+
+### Shell completion — `agentcohort completion <shell>`
+
+Tab-complete subcommands, `list` scopes, shell names, and the agent /
+command file names baked into the package. Emits a script to
+stdout — pipe it to your shell's config:
+
+```bash
+# bash
+agentcohort completion bash > ~/.agentcohort-completion.bash
+echo 'source ~/.agentcohort-completion.bash' >> ~/.bashrc
+
+# zsh
+agentcohort completion zsh > "${fpath[1]}/_agentcohort"
+autoload -U compinit && compinit
+
+# PowerShell (Windows / cross-platform)
+agentcohort completion pwsh >> $PROFILE
+. $PROFILE
+```
+
+After upgrading the package, re-run `agentcohort completion <shell>`
+to refresh — agent / command name lists are baked in at script
+generation time (same trade-off as `cargo` / `npm` / `docker`).
+
+What gets completed:
+
+| Position | Suggestions |
+|---|---|
+| `agentcohort <TAB>` | every top-level command (init, doctor, list, show, …) |
+| `agentcohort list <TAB>` | `agents` / `commands` / `gates` |
+| `agentcohort show <TAB>` | bundled agent / command names + `agent/<name>` / `command/<name>` |
+| `agentcohort diff <TAB>` | same as `show` |
+| `agentcohort reset <TAB>` | same as `show` |
+| `agentcohort completion <TAB>` | `bash` / `zsh` / `pwsh` |
+| anywhere else | every long-form flag agentcohort recognizes |
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -338,6 +608,34 @@ runs.
 | `agentcohort lint --json` | Same checks, machine-readable JSON output. |
 | `agentcohort status` | **Read-only** at-a-glance report: version, agent / command counts, CLAUDE.md routing presence, resolved model tiers + gate modes, OpenWolf activity, planned upcoming features. |
 | `agentcohort status --json` | Same data, machine-readable JSON output. |
+| `agentcohort list` | **Read-only** discovery: enumerates bundled agents, commands and gates with per-file install status, model tier, descriptions and gate trigger blurbs. |
+| `agentcohort list agents \| commands \| gates` | Same as above scoped to one section. |
+| `agentcohort list --json` | Same data, machine-readable JSON output. |
+| `agentcohort show <name>` | **Read-only** inspect one file. Prints the installed body (falls back to bundled with a banner). When a name matches both an agent and a command, prints both with clear headers. |
+| `agentcohort show agent/<name> \| command/<name>` | Disambiguate when a name lives in both kinds. |
+| `agentcohort show --raw <name>` | Print the bundled template body untouched — pre-render, pre-stamp. |
+| `agentcohort show --bundled <name>` | Print the bundled template after render + stamp (= what `init` / `upgrade` would write). |
+| `agentcohort show --json <name>` | Same data, machine-readable JSON output. |
+| `agentcohort search <keyword>` | **Read-only** grep across agent + command bodies. Case-insensitive substring by default. Installed files take precedence; bundled-only files still scanned and tagged `[bundled]`. |
+| `agentcohort search --agents \| --commands` | Restrict the search to one kind. |
+| `agentcohort search --exact` | Case-sensitive literal match (no special chars). |
+| `agentcohort search --regex` | Treat the query as an ECMAScript regex (per-line, /g implied). |
+| `agentcohort search --json` | Same data, machine-readable JSON output. |
+| `agentcohort diff` | **Read-only** unified diff for every installed file that differs from the bundled version. Exits 0 when nothing differs, 1 when something does — CI-friendly. |
+| `agentcohort diff <name>` | Diff a single file (also accepts `agent/<name>` / `command/<name>`). |
+| `agentcohort diff --agents \| --commands` | Restrict to one kind. |
+| `agentcohort diff --json` | Same data, machine-readable JSON output. |
+| `agentcohort reset <name>` | **Mutating** — revert one installed agent / command to the bundled body. Targeted alternative to `upgrade`. Refuses bulk, `extra` files, and ambiguous bare names. |
+| `agentcohort reset <name> --dry-run` | Preview; writes nothing. |
+| `agentcohort reset <name> --backup` | Back up the original before overwriting. |
+| `agentcohort reset <name> --yes \| --force` | Skip the interactive confirm. |
+| `agentcohort uninstall` | **Mutating, destructive** — remove bundled files, strip CLAUDE.md routing section. NEVER touches user-authored files. `.agentcohort.json` kept by default. |
+| `agentcohort uninstall --dry-run` | Show the plan; writes nothing. |
+| `agentcohort uninstall --backup` | Back up every file before removing it. |
+| `agentcohort uninstall --keep-claude-md` | Do NOT strip the CLAUDE.md routing section. |
+| `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
+| `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
+| `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
