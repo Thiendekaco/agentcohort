@@ -120,7 +120,8 @@ A project may opt out by writing a contrary instruction in `CLAUDE.md`
 
 `/auto-flow` is the **default entry point**. It runs the cheap
 `dispatcher` agent first to classify the task into a tier and print
-an execution plan; nothing else runs until the user replies `y`.
+the two-option panel; nothing else runs until the user replies
+`1` / `y` / Enter (or picks a flow from `[2]`).
 
 | Tier | When | Pipeline |
 |---|---|---|
@@ -139,8 +140,8 @@ an execution plan; nothing else runs until the user replies `y`.
 `wallet`, `signature`, `private key`, `concurrency`, `race condition`,
 `lock`, `mutex`, `transaction`, `cache`, `invalidation`, `ttl`.
 
-Uncertainty escalates **up**, never down. The user can override with
-`escalate` / `abort` / `question` instead of `y`.
+Uncertainty escalates **up**, never down. The user can override at
+the panel with `[2]` (pick a different flow) or `abort`.
 
 ## Workflow selection
 
