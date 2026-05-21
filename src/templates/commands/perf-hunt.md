@@ -16,13 +16,19 @@ changes. No blind optimization.**
    `gates.bottleneck` (default `auto`). If `on`, OR `auto` AND the
    dispatcher classified this as Tier 4 / has an escalation keyword
    (cache, concurrency, race condition, transaction, …), STOP and
-   surface the ranked bottleneck list for user confirmation BEFORE
-   architect/optimizer cost is committed. Wait for:
-   - `y` → continue to step 3 with the top-ranked bottleneck as target.
-   - `revise <feedback>` → re-run performance-hunter with the feedback
-     (e.g. "ignore the render path, focus on the DB query").
-   - `abort` → stop the pipeline.
-   If `off`, skip this gate and continue immediately.
+   surface the ranked bottleneck list BEFORE architect/optimizer cost
+   is committed. Then use **`AskUserQuestion`** with:
+   - `question`: `"Bottleneck identified — target the top-ranked one?"`
+   - `header`: `"Bottleneck gate"`
+   - `options`:
+     - `Approve` — Target the top-ranked bottleneck.
+     - `Revise` — I'll narrow the focus (e.g. ignore one path).
+     - `Abort` — Stop the pipeline.
+   On `Approve` continue to step 3. On `Revise` collect feedback and
+   re-run performance-hunter. On `Abort` stop. Fallback when
+   `AskUserQuestion` is unavailable: numbered text menu accepting
+   `1`/`y`/Enter / `revise <feedback>` / `abort`. If `off`, skip
+   this gate.
 3. **solution-architect** — *only if* the likely fix affects caching, data
    flow, or architecture. Decide the boundary-safe approach. Otherwise skip
    and say why.
@@ -30,11 +36,15 @@ changes. No blind optimization.**
    `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
    `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
    STOP and surface the architect's decision (chosen approach + caching/
-   invalidation plan + risks) for user review. Wait for:
-   - `y` → continue to step 5.
-   - `revise <feedback>` → re-run architect with the feedback.
-   - `abort` → stop the pipeline.
-   If `off`, skip this gate and continue immediately.
+   invalidation plan + risks). Then use **`AskUserQuestion`** with:
+   - `question`: `"Architect verdict — proceed with this perf approach?"`
+   - `header`: `"Architect gate"`
+   - `options`:
+     - `Approve` — Continue to perf-optimizer with this design.
+     - `Revise` — I'll provide feedback; re-run the architect.
+     - `Abort` — Stop the pipeline.
+   Same fallback contract as the bottleneck gate
+   (`1`/`y`/Enter / `revise <feedback>` / `abort`). If `off`, skip.
 5. **perf-optimizer** — apply the smallest reversible, evidence-backed change;
    measure before/after under the same workload; preserve behavior.
 6. **test-verifier** — run tests/typecheck/lint; confirm behavior unchanged;

@@ -73,28 +73,36 @@ For ANY user task — feature, bug, perf, refactor, review, "fix X",
 the assistant **MUST** start by invoking `/auto-flow` with the user's
 message verbatim. Do not write code, edit files, or run downstream
 agents directly until the `dispatcher` has classified the task,
-printed its **two-option panel**, and the user has explicitly approved.
+surfaced its recommendation, and the user has approved via the
+selection prompt.
 
 The user should not need to type a slash command. Natural-language
 requests automatically route through `/auto-flow`.
 
-**The two-option panel.** The dispatcher prints one short recommendation
-plus exactly two choices:
+**The approval prompt.** After the dispatcher prints its short
+recommendation (Recommended / Cost / Why / optional Escalation), the
+orchestrator calls Claude Code's **`AskUserQuestion`** tool with two
+options:
 
-```
-  [1] Run recommended  ← default (press Enter)
-  [2] Pick a different flow
-```
+- `Run recommended` — execute the dispatcher's chosen next step.
+- `Pick a different flow` — show the full text flow list
+  (`/quick-fix`, `/quick-feature`, `/dev-flow`, `/bug-audit`,
+  `/bug-fix-approved`, `/perf-hunt`, `/review-diff`, `/fix-blockers`,
+  `/repo-scout`); the user picks a letter.
 
-- `1` / `y` / Enter → run the recommended flow.
-- `2` → show the full flow list (`/quick-fix`, `/quick-feature`,
-  `/dev-flow`, `/bug-audit`, `/bug-fix-approved`, `/perf-hunt`,
-  `/review-diff`, `/fix-blockers`, `/repo-scout`); the user picks a
-  letter.
-- `abort` → stop.
-- `gates ±<name>` → per-task gate override; re-prints the panel.
-- Anything else → treated as a clarifying question; re-print the panel
-  afterwards.
+The "Other" free-form slot of `AskUserQuestion` handles power-user
+input:
+
+- `abort` → stop the pipeline.
+- `gates ±<name>` → per-task gate override; re-issue the prompt with
+  the updated `Gates:` line.
+- Anything else → treated as a clarifying question; answer it, then
+  re-issue the prompt.
+
+If `AskUserQuestion` is unavailable (older Claude Code, headless /
+scripted runs), the orchestrator falls back to a numbered text panel
+(`[1] Run recommended` / `[2] Pick a different flow`) and accepts
+the same vocabulary.
 
 **Exception — pure lookups answer inline** (no `/auto-flow` needed):
 - "Where is file X?" / "What does function Y do?" / "Trace where Z is wired."
@@ -209,11 +217,10 @@ expensive stages run on top of it.
 Missing keys fall back to defaults. Run `agentcohort config` to
 re-prompt interactively.
 
-**Per-task override** at the dispatcher's two-option panel:
+**Per-task override** via the dispatcher's approval prompt — type into
+the `AskUserQuestion` "Other" slot (or the text fallback):
 
 ```
-  [1] Run recommended  ← default (press Enter)
-  [2] Pick a different flow
 > gates -plan             # skip the plan gate for THIS task only
 > gates +architect        # force architect gate on for THIS task only
 > gates +bottleneck       # force bottleneck gate on (default is auto)
@@ -222,15 +229,22 @@ re-prompt interactively.
 The orchestrator updates the `Gates:` line, re-prints the panel, and
 waits again. Overrides do not modify `.agentcohort.json`.
 
-**Reply contract at a gate.** When a gate fires, agents present the
-relevant artifact and wait for:
+**Reply contract at a gate.** When a gate fires, the orchestrator
+surfaces the relevant artifact and calls Claude Code's
+**`AskUserQuestion`** tool with three options:
 
-- `y` — continue to the next stage.
-- `revise <feedback>` — re-run the current stage with the feedback.
-- `abort` — stop the pipeline.
+- `Approve` — continue to the next stage.
+- `Revise` — collect free-form feedback in a follow-up message, then
+  re-run the current stage with it.
+- `Abort` — stop the pipeline.
 
-Agents do not auto-continue past a gate that is `on` and has not
-been replied to.
+If `AskUserQuestion` is unavailable (older Claude Code, headless /
+scripted runs), the orchestrator falls back to a numbered text menu
+and accepts `1` / `y` / Enter (Approve), `revise <feedback>`
+(Revise), or `abort`.
+
+The orchestrator does not auto-continue past a gate that is `on` and
+has not been answered.
 
 ## Bug audit rule (non-negotiable)
 

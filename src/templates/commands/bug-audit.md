@@ -15,12 +15,17 @@ product code.** Its only deliverable is a decision-ready report.
    cause → root cause → systemic cause; severity; impact; correction options.
 3. **🚦 HUMAN GATE — root-cause**. Read `.agentcohort.json` for
    `gates.root-cause` (default `on`). If `on`, OR `auto` AND Tier ≥ 4,
-   STOP and surface the root cause analysis for user confirmation BEFORE
-   building the reproduction. Wait for:
-   - `y` → continue to step 4.
-   - `revise <feedback>` → re-run root-cause-analyst with the feedback.
-   - `abort` → stop the pipeline.
-   If `off`, skip this gate and continue immediately.
+   STOP and surface the root cause analysis BEFORE building the
+   reproduction. Then use **`AskUserQuestion`** with:
+   - `question`: `"Root-cause verdict — does this match the evidence?"`
+   - `header`: `"Root-cause gate"`
+   - `options`:
+     - `Approve` — Continue to reproduction-engineer.
+     - `Revise` — I'll provide feedback; re-run root-cause-analyst.
+     - `Abort` — Stop the audit.
+   Fallback when `AskUserQuestion` is unavailable: numbered text menu
+   accepting `1`/`y`/Enter / `revise <feedback>` / `abort`. If `off`,
+   skip this gate.
 4. **reproduction-engineer** — make the primary bug deterministic; capture a
    failing test/script (test scaffolding only — no product-code changes).
 5. **expert-council** — review the diagnosis; produce solution options with

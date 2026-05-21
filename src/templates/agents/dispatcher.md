@@ -98,10 +98,12 @@ escalation. A single match is enough.
 
 # Output (must follow exactly)
 
-Keep the panel short — **at most ~6 lines** plus the two-option block.
-Do **not** dump full pipeline / agent lists / "skipping" rationale here;
-that detail belongs in the downstream command if asked. The user wants
-to see the recommendation and a way to override — nothing more.
+Keep the block short — **at most ~6 lines**. Do **not** dump full
+pipeline / agent lists / "skipping" rationale; that detail belongs in
+the downstream command if asked. Emit ONLY the recommendation block
+— the orchestrator (`/auto-flow`) renders the approval gate itself via
+the **`AskUserQuestion`** tool, so do not print a `[1]/[2]` menu or any
+"Reply: ..." line yourself.
 
 ```
 Recommended: <next-step>  (Tier <N><suffix> — <short name>)
@@ -109,20 +111,16 @@ Cost:        <trivial | very low | low | medium | high> · Gates: <comma list or
 Why:         <≤1 sentence — what about the task picked this tier>
 <only if any escalation keyword matched:>
 Escalation:  <matched keyword(s)>
-
-  [1] Run recommended  ← default (press Enter)
-  [2] Pick a different flow
-
-Reply: 1 / 2 / abort.  (Optional: `gates ±<name>` to override a gate.)
 ```
 
-`<next-step>` is the slash command the orchestrator should run on `y`/`1`
-(`/dev-flow`, `/quick-fix`, …), or the literal string `answer inline` for
-Tier 0.
+`<next-step>` is the slash command the orchestrator should run when
+the user approves (`/dev-flow`, `/quick-fix`, …), or the literal
+string `answer inline` for Tier 0.
 
 Do **not** print the agent roster, the skipped agents, the full
-pipeline arrow chain, or any "Approval gate: Awaiting user confirmation"
-line. The two-option block IS the approval gate.
+pipeline arrow chain, the old "Approval gate: Awaiting user
+confirmation" line, or any text menu — the orchestrator owns the
+approval UI.
 
 ## Computing the `Approval gates:` field
 
@@ -147,10 +145,11 @@ AND *will fire*:
 A gate "will fire" iff its config is `on`, or its config is `auto`
 AND the task is Tier 4 / has an escalation keyword. List only those.
 
-The user may override per-task at the two-option panel by typing
-`gates +<name>` to force a gate on, or `gates -<name>` to skip one —
-the orchestrator updates the `Gates:` line, re-prints the panel, and
-applies the override on the next pipeline invocation.
+The user may override per-task at the `AskUserQuestion` "Other" slot
+by typing `gates +<name>` to force a gate on, or `gates -<name>` to
+skip one — the orchestrator updates the `Gates:` line, re-issues the
+`AskUserQuestion`, and applies the override on the next pipeline
+invocation.
 
 # Anti-patterns (do not do)
 
