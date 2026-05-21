@@ -88,6 +88,34 @@ describe('parseArgs — list subcommand', () => {
   });
 });
 
+describe('parseArgs — show subcommand', () => {
+  it('parses `show <name>` with name captured into subcommand', () => {
+    const a = parseArgs(['show', 'dispatcher']);
+    expect(a.command).toBe('show');
+    expect(a.subcommand).toBe('dispatcher');
+  });
+
+  it('parses `show agent/dispatcher` (slash prefix lives in subcommand string)', () => {
+    const a = parseArgs(['show', 'agent/dispatcher']);
+    expect(a.subcommand).toBe('agent/dispatcher');
+  });
+
+  it('parses --raw and --bundled flags', () => {
+    const a = parseArgs(['show', 'dispatcher', '--raw']);
+    expect(a.raw).toBe(true);
+    expect(a.bundled).toBe(false);
+    const b = parseArgs(['show', 'dispatcher', '--bundled']);
+    expect(b.bundled).toBe(true);
+    expect(b.raw).toBe(false);
+  });
+
+  it('--raw/--bundled default to false', () => {
+    const a = parseArgs(['show', 'dispatcher']);
+    expect(a.raw).toBe(false);
+    expect(a.bundled).toBe(false);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

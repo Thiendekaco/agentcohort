@@ -18,6 +18,7 @@ import {
   ListGateEntry,
   ListEntryStatus,
 } from './list';
+import { runShow, ShowResult, ShowMatch, ShowVariant } from './show';
 import {
   runUpgrade,
   UpgradeAction,
@@ -99,7 +100,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'lint' &&
     args.command !== 'status' &&
     args.command !== 'upgrade' &&
-    args.command !== 'list'
+    args.command !== 'list' &&
+    args.command !== 'show'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -195,6 +197,47 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'show') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ show: missing <name>. Usage: agentcohort show <name> | agent/<name> | command/<name>\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    if (args.raw && args.bundled) {
+      process.stderr.write(
+        paint('✗ show: --raw and --bundled are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const variant: ShowVariant = args.raw ? 'raw' : args.bundled ? 'bundled' : 'default';
+    try {
+      const existingConfig = loadConfig(process.cwd());
+      const models = resolveModels(existingConfig);
+      const result = runShow({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query,
+        variant,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatShowResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ show: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -604,6 +647,56 @@ function formatGatesBlock(entries: ListGateEntry[]): string {
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + '…';
+}
+
+function formatShowResult(result: ShowResult): string {
+  if (result.notFound) {
+    const hint = result.restrictTo
+      ? `No ${result.restrictTo} matches '${result.query}'.`
+      : `No agent or command matches '${result.query}'.`;
+    return paint(`✗ ${hint}\n`, 'red');
+  }
+  const out: string[] = [];
+  for (let i = 0; i < result.matches.length; i += 1) {
+    if (i > 0) out.push('');
+    out.push(formatShowMatch(result.matches[i]!));
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatShowMatch(m: ShowMatch): string {
+  const out: string[] = [];
+  const kindLabel = m.kind === 'agent' ? 'Agent' : 'Command';
+  const sourceLabel = {
+    installed: 'installed',
+    'bundled-rendered': 'bundled (rendered + stamped)',
+    'bundled-raw': 'bundled (raw, pre-render)',
+  }[m.source];
+  out.push(
+    paint(`── ${kindLabel}: ${m.name} ──`, 'bold', 'cyan') +
+      paint(`  ${sourceLabel}`, 'gray')
+  );
+  out.push(paint(m.path, 'gray'));
+  if (m.fallback) {
+    out.push(
+      paint(
+        '! Not installed locally — showing the bundled body. Run `agentcohort init` (or `upgrade`) to install.',
+        'yellow'
+      )
+    );
+  }
+  if (m.source === 'installed' && m.status !== undefined && m.status !== 'no-bundled') {
+    const statusLabel = {
+      unchanged: paint('integrity: unchanged', 'green'),
+      outdated: paint('integrity: outdated (bundled has moved on)', 'yellow'),
+      'user-edited': paint('integrity: user-edited (body diverges from stamp)', 'yellow'),
+      unstamped: paint('integrity: unstamped (pre-0.4.0 install)', 'yellow'),
+    }[m.status];
+    out.push(statusLabel);
+  }
+  out.push('');
+  out.push(m.content.trimEnd());
+  return out.join('\n');
 }
 
 async function upgradeResolver(
