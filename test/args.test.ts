@@ -175,6 +175,35 @@ describe('parseArgs — diff subcommand', () => {
   });
 });
 
+describe('parseArgs — reset subcommand', () => {
+  it('parses `reset <name>` with name captured into subcommand', () => {
+    const a = parseArgs(['reset', 'dispatcher']);
+    expect(a.command).toBe('reset');
+    expect(a.subcommand).toBe('dispatcher');
+  });
+
+  it('parses bare `reset` (CLI layer rejects, parser does not)', () => {
+    const a = parseArgs(['reset']);
+    expect(a.command).toBe('reset');
+    expect(a.subcommand).toBeNull();
+  });
+
+  it('parses `reset agent/<name>` slash prefix into subcommand', () => {
+    const a = parseArgs(['reset', 'agent/dispatcher']);
+    expect(a.subcommand).toBe('agent/dispatcher');
+  });
+
+  it('reuses --yes / --dry-run / --backup / --force flags', () => {
+    const a = parseArgs(['reset', 'dispatcher', '--yes', '--backup']);
+    expect(a.yes).toBe(true);
+    expect(a.backup).toBe(true);
+    const b = parseArgs(['reset', 'dispatcher', '--dry-run']);
+    expect(b.dryRun).toBe(true);
+    const c = parseArgs(['reset', 'dispatcher', '--force']);
+    expect(c.force).toBe(true);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

@@ -332,6 +332,54 @@ Drop `agentcohort diff` into a pre-merge check to fail the build when a
 contributor edits a bundled template in `.claude/` without going
 through `agentcohort upgrade`.
 
+### Revert one file — `agentcohort reset <name>`
+
+Targeted mutating command — revert ONE installed agent / command to
+the currently-bundled body (rendered for your configured tiers,
+re-stamped). Complements `upgrade` (project-wide refresh) when you
+want to undo edits to a single file without touching the rest.
+
+```bash
+agentcohort reset dispatcher              # prompts before writing
+agentcohort reset agent/dispatcher        # disambiguate (also: agents/...)
+agentcohort reset command/auto-flow       # disambiguate (also: commands/...)
+agentcohort reset dispatcher --dry-run    # preview, no write
+agentcohort reset dispatcher --backup     # back up before overwriting
+agentcohort reset dispatcher --yes        # skip confirm (non-interactive ok)
+agentcohort reset dispatcher --force      # alias of --yes for this command
+```
+
+**Safety policy:**
+
+- **No bulk reset.** The user must name a file. For project-wide
+  refresh, use `agentcohort upgrade`.
+- **Refuses `extra` files** (installed locally but not part of the
+  bundled set — typically user-authored agents). There's no bundled
+  version to reset to; deleting a user-authored file is a manual
+  decision.
+- **Refuses ambiguity.** When a bare name matches both an agent and
+  a command, reset refuses and prompts for `agent/<name>` or
+  `command/<name>`.
+- **Interactive confirm by default.** A pre-confirm diff is printed so
+  you see exactly what will change. Skip with `--yes` / `--force`.
+- **Non-interactive without `--yes` refuses to write** — protects CI
+  and pipes from accidental destructive runs.
+
+Per-file outcomes:
+
+| `disposition` | Meaning |
+|---|---|
+| `noop` | already matches bundled — nothing to do |
+| `reset` | installed file was overwritten (was outdated / user-edited / unstamped) |
+| `installed` | bundled file was not present locally; written fresh |
+| `refused-extra` | installed locally but not in bundled set |
+| `refused-not-found` | no agent / command matches |
+| `refused-ambiguous` | bare name matches both kinds — needs `agent/` or `command/` prefix |
+
+Exit codes: **0** success (noop / reset / installed), **1** refused
+or named target not found, **2** internal failure, **130** user
+cancelled the interactive confirm.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -497,6 +545,10 @@ runs.
 | `agentcohort diff <name>` | Diff a single file (also accepts `agent/<name>` / `command/<name>`). |
 | `agentcohort diff --agents \| --commands` | Restrict to one kind. |
 | `agentcohort diff --json` | Same data, machine-readable JSON output. |
+| `agentcohort reset <name>` | **Mutating** — revert one installed agent / command to the bundled body. Targeted alternative to `upgrade`. Refuses bulk, `extra` files, and ambiguous bare names. |
+| `agentcohort reset <name> --dry-run` | Preview; writes nothing. |
+| `agentcohort reset <name> --backup` | Back up the original before overwriting. |
+| `agentcohort reset <name> --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

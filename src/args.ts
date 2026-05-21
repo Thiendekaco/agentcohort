@@ -85,7 +85,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       (parsed.command === 'list' ||
         parsed.command === 'show' ||
         parsed.command === 'search' ||
-        parsed.command === 'diff') &&
+        parsed.command === 'diff' ||
+        parsed.command === 'reset') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -142,6 +143,15 @@ ${b('COMMANDS')}
                        --agents / --commands. Searches installed files
                        first; bundled-only files are still scanned so
                        you can discover what's available pre-install.
+  reset <name>         Mutating. Revert ONE installed agent / command
+                       to the currently-bundled body (render + stamp).
+                       Targeted complement to \`upgrade\` for fixing a
+                       single hand-edited file without touching the
+                       rest of the install. Use \`agent/<name>\` or
+                       \`command/<name>\` to disambiguate. Refuses when
+                       the file is \`extra\` (no bundled version to
+                       reset to). Interactive prompt before any write;
+                       skip with --yes or --force.
   diff [name]          Read-only diff between installed templates and
                        the currently-bundled versions. With no name,
                        prints a unified diff for every file that
