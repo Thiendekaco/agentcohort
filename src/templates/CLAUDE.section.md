@@ -73,20 +73,36 @@ For ANY user task — feature, bug, perf, refactor, review, "fix X",
 the assistant **MUST** start by invoking `/auto-flow` with the user's
 message verbatim. Do not write code, edit files, or run downstream
 agents directly until the `dispatcher` has classified the task,
-printed the plan, and the user has explicitly approved with `y`.
+printed its **two-option panel**, and the user has explicitly approved.
 
 The user should not need to type a slash command. Natural-language
 requests automatically route through `/auto-flow`.
+
+**The two-option panel.** The dispatcher prints one short recommendation
+plus exactly two choices:
+
+```
+  [1] Run recommended  ← default (press Enter)
+  [2] Pick a different flow
+```
+
+- `1` / `y` / Enter → run the recommended flow.
+- `2` → show the full flow list (`/quick-fix`, `/quick-feature`,
+  `/dev-flow`, `/bug-audit`, `/bug-fix-approved`, `/perf-hunt`,
+  `/review-diff`, `/fix-blockers`, `/repo-scout`); the user picks a
+  letter.
+- `abort` → stop.
+- `gates ±<name>` → per-task gate override; re-prints the panel.
+- Anything else → treated as a clarifying question; re-print the panel
+  afterwards.
 
 **Exception — pure lookups answer inline** (no `/auto-flow` needed):
 - "Where is file X?" / "What does function Y do?" / "Trace where Z is wired."
 - Any read-only question that does not change state and does not
   require code edits.
 
-If the user replies `escalate` to the plan, route one tier up; `abort`
-stops; `question` answers a follow-up before re-confirming. Never
-silently skip the dispatcher because a task "looks small" — sizing is
-the dispatcher's job, not the assistant's.
+Never silently skip the dispatcher because a task "looks small" —
+sizing is the dispatcher's job, not the assistant's.
 
 A project may opt out by writing a contrary instruction in `CLAUDE.md`
 **outside** this section (per the interoperability rules above).
@@ -104,7 +120,8 @@ A project may opt out by writing a contrary instruction in `CLAUDE.md`
 
 `/auto-flow` is the **default entry point**. It runs the cheap
 `dispatcher` agent first to classify the task into a tier and print
-an execution plan; nothing else runs until the user replies `y`.
+the two-option panel; nothing else runs until the user replies
+`1` / `y` / Enter (or picks a flow from `[2]`).
 
 | Tier | When | Pipeline |
 |---|---|---|
@@ -123,8 +140,8 @@ an execution plan; nothing else runs until the user replies `y`.
 `wallet`, `signature`, `private key`, `concurrency`, `race condition`,
 `lock`, `mutex`, `transaction`, `cache`, `invalidation`, `ttl`.
 
-Uncertainty escalates **up**, never down. The user can override with
-`escalate` / `abort` / `question` instead of `y`.
+Uncertainty escalates **up**, never down. The user can override at
+the panel with `[2]` (pick a different flow) or `abort`.
 
 ## Workflow selection
 
@@ -192,16 +209,18 @@ expensive stages run on top of it.
 Missing keys fall back to defaults. Run `agentcohort config` to
 re-prompt interactively.
 
-**Per-task override** at the dispatcher plan prompt:
+**Per-task override** at the dispatcher's two-option panel:
 
 ```
-Proceed with this plan?  [y / escalate / abort / question / gates ±<name>]
+  [1] Run recommended  ← default (press Enter)
+  [2] Pick a different flow
 > gates -plan             # skip the plan gate for THIS task only
 > gates +architect        # force architect gate on for THIS task only
 > gates +bottleneck       # force bottleneck gate on (default is auto)
 ```
 
-Overrides do not modify `.agentcohort.json`.
+The orchestrator updates the `Gates:` line, re-prints the panel, and
+waits again. Overrides do not modify `.agentcohort.json`.
 
 **Reply contract at a gate.** When a gate fires, agents present the
 relevant artifact and wait for:
