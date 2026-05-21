@@ -150,6 +150,31 @@ describe('parseArgs — search subcommand', () => {
   });
 });
 
+describe('parseArgs — diff subcommand', () => {
+  it('parses bare `diff` with no name', () => {
+    const a = parseArgs(['diff']);
+    expect(a.command).toBe('diff');
+    expect(a.subcommand).toBeNull();
+  });
+
+  it('parses `diff <name>` with name captured into subcommand', () => {
+    const a = parseArgs(['diff', 'dispatcher']);
+    expect(a.subcommand).toBe('dispatcher');
+  });
+
+  it('parses `diff agent/<name>` (prefix lives in the subcommand string)', () => {
+    const a = parseArgs(['diff', 'agent/dispatcher']);
+    expect(a.subcommand).toBe('agent/dispatcher');
+  });
+
+  it('reuses --agents / --commands flags for scope', () => {
+    const a = parseArgs(['diff', '--agents']);
+    expect(a.agents).toBe(true);
+    const b = parseArgs(['diff', '--commands']);
+    expect(b.commands).toBe(true);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

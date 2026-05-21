@@ -28,6 +28,13 @@ import {
   SearchLineMatch,
 } from './search';
 import {
+  runDiff,
+  DiffResult,
+  DiffScope,
+  DiffFileEntry,
+  DiffStatus,
+} from './diffCmd';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -110,7 +117,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'upgrade' &&
     args.command !== 'list' &&
     args.command !== 'show' &&
-    args.command !== 'search'
+    args.command !== 'search' &&
+    args.command !== 'diff'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -206,6 +214,41 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'diff') {
+    if (args.agents && args.commands) {
+      process.stderr.write(
+        paint('✗ diff: --agents and --commands are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const scope: DiffScope = args.agents
+      ? 'agents'
+      : args.commands
+      ? 'commands'
+      : 'all';
+    try {
+      const existingConfig = loadConfig(process.cwd());
+      const models = resolveModels(existingConfig);
+      const result = runDiff({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        query: args.subcommand,
+        scope,
+        models,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatDiffResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ diff: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -798,6 +841,85 @@ function formatSearchFile(f: SearchFileResult): string {
   for (const m of f.matches) {
     const num = String(m.line).padStart(gutter, ' ');
     out.push(paint(`  ${num}:`, 'gray') + ' ' + highlightLine(m));
+  }
+  return out.join('\n');
+}
+
+const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+  unchanged: 'green',
+  outdated: 'yellow',
+  'user-edited': 'yellow',
+  unstamped: 'yellow',
+  missing: 'red',
+  extra: 'gray',
+};
+
+function formatDiffResult(result: DiffResult): string {
+  if (result.notFound) {
+    const which = result.restrictTo ?? 'agent or command';
+    return paint(
+      `✗ No ${which} matches '${result.query}'.\n`,
+      'red'
+    );
+  }
+  if (result.files.length === 0) {
+    const label = result.query
+      ? `'${result.query}'`
+      : result.scope === 'all'
+      ? 'all files'
+      : result.scope;
+    return paint(`✓ No differences (${label}). ${result.unchangedCount} unchanged.\n`, 'green');
+  }
+  const out: string[] = [];
+  for (const f of result.files) {
+    out.push(formatDiffEntry(f));
+  }
+  // Summary footer.
+  const counts = new Map<DiffStatus, number>();
+  for (const f of result.files) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
+  const segs: string[] = [];
+  for (const [s, n] of counts) segs.push(`${n} ${s}`);
+  if (result.unchangedCount > 0) segs.push(`${result.unchangedCount} unchanged`);
+  out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  return out.join('\n') + '\n';
+}
+
+function formatDiffEntry(f: DiffFileEntry): string {
+  const kindLabel = f.kind === 'agent' ? 'agents' : 'commands';
+  const head =
+    paint(`── ${kindLabel}/${f.name}.md ──`, 'bold', 'cyan') +
+    '  ' +
+    paint(f.status, DIFF_STATUS_COLOR[f.status]);
+  if (f.status === 'extra') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  (installed locally but not part of the bundled set — nothing to diff against)`,
+        'gray'
+      ) +
+      '\n'
+    );
+  }
+  // For `missing` the unifiedDiff is "(not installed)" -> bundled body.
+  // It can be long but printing it shows exactly what would be installed.
+  return head + '\n' + colorizeDiff(f.diff) + '\n';
+}
+
+function colorizeDiff(diff: string): string {
+  const out: string[] = [];
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      out.push(paint(line, 'bold'));
+    } else if (line.startsWith('@@')) {
+      out.push(paint(line, 'cyan'));
+    } else if (line.startsWith('+')) {
+      out.push(paint(line, 'green'));
+    } else if (line.startsWith('-')) {
+      out.push(paint(line, 'red'));
+    } else {
+      out.push(line);
+    }
   }
   return out.join('\n');
 }

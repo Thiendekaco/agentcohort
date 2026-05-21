@@ -291,6 +291,47 @@ the bundled body and tags the result `[bundled]`. This means
 Exit codes: **0** at least one match, **1** no matches (or invalid regex
 pattern with a friendly note), **2** internal failure.
 
+### Inspect drift — `agentcohort diff [name]`
+
+CI-friendly read-only diff between **installed** templates and the
+currently **bundled** versions. Unlike `upgrade --dry-run --diff` —
+which is action-oriented — `diff` is pure inspection: no policy
+decisions, no prompts, no concept of "kept" or "applied". Just: what
+is different right now?
+
+```bash
+agentcohort diff                       # diff every file that differs
+agentcohort diff dispatcher            # diff one file by name
+agentcohort diff agent/dispatcher      # disambiguate (also: agents/...)
+agentcohort diff command/auto-flow     # disambiguate (also: commands/...)
+agentcohort diff --agents              # scope to agent files
+agentcohort diff --commands            # scope to command files
+agentcohort diff --json                # JSON for tooling / CI
+```
+
+Per-file `status`:
+
+| Status | Meaning |
+|---|---|
+| `unchanged` | installed body matches the current bundled body (silent — not included in `files`) |
+| `outdated` | installed stamp matches an older bundled body |
+| `user-edited` | installed body diverges from its stamp |
+| `unstamped` | installed has no stamp (pre-0.4.0) |
+| `missing` | bundled but not installed (diff shows the full bundled body) |
+| `extra` | installed locally but not in the bundled set (no comparison possible) |
+
+Exit codes are wired for CI:
+
+| Code | Meaning |
+|---|---|
+| 0 | No differences — `unchanged` for everything in scope |
+| 1 | At least one difference (or the named file does not exist) |
+| 2 | Internal failure |
+
+Drop `agentcohort diff` into a pre-merge check to fail the build when a
+contributor edits a bundled template in `.claude/` without going
+through `agentcohort upgrade`.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -452,6 +493,10 @@ runs.
 | `agentcohort search --exact` | Case-sensitive literal match (no special chars). |
 | `agentcohort search --regex` | Treat the query as an ECMAScript regex (per-line, /g implied). |
 | `agentcohort search --json` | Same data, machine-readable JSON output. |
+| `agentcohort diff` | **Read-only** unified diff for every installed file that differs from the bundled version. Exits 0 when nothing differs, 1 when something does — CI-friendly. |
+| `agentcohort diff <name>` | Diff a single file (also accepts `agent/<name>` / `command/<name>`). |
+| `agentcohort diff --agents \| --commands` | Restrict to one kind. |
+| `agentcohort diff --json` | Same data, machine-readable JSON output. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
