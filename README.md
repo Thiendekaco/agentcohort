@@ -424,6 +424,42 @@ agentcohort uninstall --yes            # skip the confirm (non-interactive ok)
 Override either with `--keep-claude-md` / `--remove-config` /
 `--keep-config`.
 
+### Shell completion — `agentcohort completion <shell>`
+
+Tab-complete subcommands, `list` scopes, shell names, and the agent /
+command file names baked into the package. Emits a script to
+stdout — pipe it to your shell's config:
+
+```bash
+# bash
+agentcohort completion bash > ~/.agentcohort-completion.bash
+echo 'source ~/.agentcohort-completion.bash' >> ~/.bashrc
+
+# zsh
+agentcohort completion zsh > "${fpath[1]}/_agentcohort"
+autoload -U compinit && compinit
+
+# PowerShell (Windows / cross-platform)
+agentcohort completion pwsh >> $PROFILE
+. $PROFILE
+```
+
+After upgrading the package, re-run `agentcohort completion <shell>`
+to refresh — agent / command name lists are baked in at script
+generation time (same trade-off as `cargo` / `npm` / `docker`).
+
+What gets completed:
+
+| Position | Suggestions |
+|---|---|
+| `agentcohort <TAB>` | every top-level command (init, doctor, list, show, …) |
+| `agentcohort list <TAB>` | `agents` / `commands` / `gates` |
+| `agentcohort show <TAB>` | bundled agent / command names + `agent/<name>` / `command/<name>` |
+| `agentcohort diff <TAB>` | same as `show` |
+| `agentcohort reset <TAB>` | same as `show` |
+| `agentcohort completion <TAB>` | `bash` / `zsh` / `pwsh` |
+| anywhere else | every long-form flag agentcohort recognizes |
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -599,6 +635,7 @@ runs.
 | `agentcohort uninstall --keep-claude-md` | Do NOT strip the CLAUDE.md routing section. |
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
+| `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
