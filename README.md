@@ -252,6 +252,45 @@ Integrity verdict is shown for installed files so you know at a glance
 whether the body still matches its stamp (`unchanged` / `outdated` /
 `user-edited` / `unstamped`).
 
+### Search by content — `agentcohort search <keyword>`
+
+Grep across agent + command bodies. Pairs with `list` (enumerate) and
+`show` (inspect by name) — `search` finds the file by what it
+*contains*. Useful for "which agent handles migrations?" or "find every
+mention of `escalation keyword`."
+
+```bash
+agentcohort search dispatcher              # case-insensitive substring (default)
+agentcohort search "exit code" --exact     # case-sensitive literal
+agentcohort search "^model:\s+\S+$" --regex  # ECMAScript regex per-line
+agentcohort search dispatcher --agents     # scope to agent files
+agentcohort search dispatcher --commands   # scope to command files
+agentcohort search dispatcher --json       # JSON for tooling
+```
+
+Output is ripgrep-style — file group, line number, line content with
+the match highlighted:
+
+```text
+agents/dispatcher.md
+   3:  description: Read-only task classifier...
+  12:  the dispatcher returns a structured plan with: tier, pipeline...
+
+commands/auto-flow.md
+  18:  Invoke the `dispatcher` subagent on `$ARGUMENTS`.
+
+2 matches in 2 files  (substring, scope: all)
+```
+
+**File source:** installed files take precedence when both an installed
+copy and a bundled template exist (so your edits show up). When a file
+is bundled-only — e.g. you haven't installed yet — `search` still scans
+the bundled body and tags the result `[bundled]`. This means
+`agentcohort search …` works as a discovery tool *before* `init`.
+
+Exit codes: **0** at least one match, **1** no matches (or invalid regex
+pattern with a friendly note), **2** internal failure.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -408,6 +447,11 @@ runs.
 | `agentcohort show --raw <name>` | Print the bundled template body untouched — pre-render, pre-stamp. |
 | `agentcohort show --bundled <name>` | Print the bundled template after render + stamp (= what `init` / `upgrade` would write). |
 | `agentcohort show --json <name>` | Same data, machine-readable JSON output. |
+| `agentcohort search <keyword>` | **Read-only** grep across agent + command bodies. Case-insensitive substring by default. Installed files take precedence; bundled-only files still scanned and tagged `[bundled]`. |
+| `agentcohort search --agents \| --commands` | Restrict the search to one kind. |
+| `agentcohort search --exact` | Case-sensitive literal match (no special chars). |
+| `agentcohort search --regex` | Treat the query as an ECMAScript regex (per-line, /g implied). |
+| `agentcohort search --json` | Same data, machine-readable JSON output. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

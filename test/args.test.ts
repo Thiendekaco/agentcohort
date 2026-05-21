@@ -116,6 +116,40 @@ describe('parseArgs — show subcommand', () => {
   });
 });
 
+describe('parseArgs — search subcommand', () => {
+  it('parses `search <keyword>` with keyword captured into subcommand', () => {
+    const a = parseArgs(['search', 'dispatcher']);
+    expect(a.command).toBe('search');
+    expect(a.subcommand).toBe('dispatcher');
+  });
+
+  it('parses --agents / --commands flags', () => {
+    const a = parseArgs(['search', 'foo', '--agents']);
+    expect(a.agents).toBe(true);
+    expect(a.commands).toBe(false);
+    const b = parseArgs(['search', 'foo', '--commands']);
+    expect(b.commands).toBe(true);
+    expect(b.agents).toBe(false);
+  });
+
+  it('parses --exact / --regex flags', () => {
+    const a = parseArgs(['search', 'foo', '--exact']);
+    expect(a.exact).toBe(true);
+    expect(a.regex).toBe(false);
+    const b = parseArgs(['search', 'foo', '--regex']);
+    expect(b.regex).toBe(true);
+    expect(b.exact).toBe(false);
+  });
+
+  it('all search flags default to false', () => {
+    const a = parseArgs(['search', 'foo']);
+    expect(a.agents).toBe(false);
+    expect(a.commands).toBe(false);
+    expect(a.exact).toBe(false);
+    expect(a.regex).toBe(false);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

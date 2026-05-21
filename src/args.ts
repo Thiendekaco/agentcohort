@@ -15,6 +15,14 @@ export interface ParsedArgs {
   raw: boolean;
   /** Show the bundled template after render + stamp (what init/upgrade would write). */
   bundled: boolean;
+  /** (search) Restrict to agent files. */
+  agents: boolean;
+  /** (search) Restrict to command files. */
+  commands: boolean;
+  /** (search) Case-sensitive literal match. */
+  exact: boolean;
+  /** (search) Treat the query as an ECMAScript regex. */
+  regex: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -31,6 +39,10 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--diff': 'diff',
   '--raw': 'raw',
   '--bundled': 'bundled',
+  '--agents': 'agents',
+  '--commands': 'commands',
+  '--exact': 'exact',
+  '--regex': 'regex',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -51,6 +63,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     diff: false,
     raw: false,
     bundled: false,
+    agents: false,
+    commands: false,
+    exact: false,
+    regex: false,
     help: false,
     version: false,
     unknown: [],
@@ -66,7 +82,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (parsed.command === null) {
       parsed.command = arg;
     } else if (
-      (parsed.command === 'list' || parsed.command === 'show') &&
+      (parsed.command === 'list' ||
+        parsed.command === 'show' ||
+        parsed.command === 'search') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -116,6 +134,13 @@ ${b('COMMANDS')}
                        clear headers. Defaults to the installed file
                        (falls back to bundled with a banner when not
                        installed).
+  search <keyword>     Grep across agent / command bodies. Default mode
+                       is case-insensitive substring; use --exact for a
+                       case-sensitive literal, or --regex for an
+                       ECMAScript pattern. Restrict to one kind with
+                       --agents / --commands. Searches installed files
+                       first; bundled-only files are still scanned so
+                       you can discover what's available pre-install.
   upgrade              Sync the project's .claude/ templates and CLAUDE.md
                        routing section to the bundled version. Refreshes
                        outdated files automatically and prompts before
@@ -144,9 +169,15 @@ ${b('OPTIONS')}
                        render + stamp (= exactly what \`init\` / \`upgrade\`
                        would write). Useful to compare against an
                        edited installed copy.
-  --json               (doctor, lint, status, list, show) Emit the
-                       report as JSON instead of human-readable text.
-                       Exit code is the same in both modes.
+  --agents             (search only) Restrict the search to agent files.
+  --commands           (search only) Restrict the search to command files.
+  --exact              (search only) Case-sensitive literal match
+                       instead of the case-insensitive default.
+  --regex              (search only) Treat the query as an ECMAScript
+                       regex (per-line match, /g flag implied).
+  --json               (doctor, lint, status, list, show, search) Emit
+                       the report as JSON instead of human-readable
+                       text. Exit code is the same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 
