@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Thiendekaco/agentcohort/compare/v0.5.0...v0.6.0) (2026-05-21)
+
+
+### Features
+
+* ship 0.6.0 — lint + status + upgrade ([#28](https://github.com/Thiendekaco/agentcohort/issues/28)) ([a3e84c8](https://github.com/Thiendekaco/agentcohort/commit/a3e84c8fb70fcc008061e8b78fe7129cb0c088d9))
+
 ## [0.5.0](https://github.com/Thiendekaco/agentcohort/compare/v0.4.0...v0.5.0) (2026-05-21)
 
 
