@@ -62,11 +62,6 @@ export interface StatusOptions {
 /** Static — soft pointers at known-planned features, NOT release commitments. */
 const PLANNED_FEATURES: PlannedFeature[] = [
   {
-    name: 'agentcohort upgrade',
-    target: 'v0.6',
-    blurb: 'bump bundled templates while preserving local config',
-  },
-  {
     name: 'Project profiles',
     target: 'v0.7',
     blurb: '`init --profile=backend|fullstack|...` for stack-aware presets',
