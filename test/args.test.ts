@@ -204,6 +204,31 @@ describe('parseArgs — reset subcommand', () => {
   });
 });
 
+describe('parseArgs — uninstall flags', () => {
+  it('parses `uninstall` as a command', () => {
+    const a = parseArgs(['uninstall']);
+    expect(a.command).toBe('uninstall');
+  });
+
+  it('parses --keep-config / --remove-config / --keep-claude-md', () => {
+    const a = parseArgs(['uninstall', '--keep-config']);
+    expect(a.keepConfig).toBe(true);
+    expect(a.removeConfig).toBe(false);
+    const b = parseArgs(['uninstall', '--remove-config']);
+    expect(b.removeConfig).toBe(true);
+    expect(b.keepConfig).toBe(false);
+    const c = parseArgs(['uninstall', '--keep-claude-md']);
+    expect(c.keepClaudeMd).toBe(true);
+  });
+
+  it('uninstall flags default to false', () => {
+    const a = parseArgs(['uninstall']);
+    expect(a.keepConfig).toBe(false);
+    expect(a.removeConfig).toBe(false);
+    expect(a.keepClaudeMd).toBe(false);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

@@ -380,6 +380,50 @@ Exit codes: **0** success (noop / reset / installed), **1** refused
 or named target not found, **2** internal failure, **130** user
 cancelled the interactive confirm.
 
+### Clean removal — `agentcohort uninstall`
+
+Mutating, destructive — remove the bundled-set files from `.claude/`
+and strip the agentcohort routing section from CLAUDE.md. Designed
+so re-running `agentcohort init` later picks up exactly where you
+left off (because `.agentcohort.json` is preserved by default).
+
+```bash
+agentcohort uninstall                  # interactive — prompts before writing
+agentcohort uninstall --dry-run        # preview the plan, no writes
+agentcohort uninstall --backup         # back up every file before removing
+agentcohort uninstall --keep-claude-md # do NOT strip the routing section
+agentcohort uninstall --remove-config  # ALSO remove .agentcohort.json
+agentcohort uninstall --keep-config    # explicit: keep .agentcohort.json (default)
+agentcohort uninstall --yes            # skip the confirm (non-interactive ok)
+```
+
+**Strong safety contract:**
+
+- **User-authored files are NEVER touched.** A file in
+  `.claude/agents/` whose name is not in the bundled set is recorded
+  as `kept-user-file` and left alone. This is non-negotiable — there
+  is no flag to delete user-authored files.
+- **CLAUDE.md content outside the routing section is preserved.**
+  Only the agentcohort section is removed; the rest of the file
+  keeps its byte content (modulo whitespace collapsing at the section
+  boundary).
+- **Directories are not removed**, even if empty after the run. You
+  own `.claude/` — agentcohort is just a tenant.
+- **Backups** (when enabled) are per-file `<file>.backup-YYYYMMDD-
+  HHMMSS`, same convention as `upgrade` / `reset`.
+- **Non-interactive without `--yes` refuses to write.** Protects CI
+  and pipes from accidental destructive runs.
+
+**Default decisions under `--yes` / non-interactive:**
+
+- CLAUDE.md routing section: **remove** (uninstall implies full
+  removal of agentcohort presence)
+- `.agentcohort.json`: **keep** (preserves your customized models /
+  gates so a future re-install is one command away)
+
+Override either with `--keep-claude-md` / `--remove-config` /
+`--keep-config`.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -549,6 +593,12 @@ runs.
 | `agentcohort reset <name> --dry-run` | Preview; writes nothing. |
 | `agentcohort reset <name> --backup` | Back up the original before overwriting. |
 | `agentcohort reset <name> --yes \| --force` | Skip the interactive confirm. |
+| `agentcohort uninstall` | **Mutating, destructive** — remove bundled files, strip CLAUDE.md routing section. NEVER touches user-authored files. `.agentcohort.json` kept by default. |
+| `agentcohort uninstall --dry-run` | Show the plan; writes nothing. |
+| `agentcohort uninstall --backup` | Back up every file before removing it. |
+| `agentcohort uninstall --keep-claude-md` | Do NOT strip the CLAUDE.md routing section. |
+| `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
+| `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

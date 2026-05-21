@@ -41,6 +41,12 @@ import {
   ResetDisposition,
 } from './reset';
 import {
+  runUninstall,
+  UninstallResult,
+  UninstallEntry,
+  UninstallActionKind,
+} from './uninstall';
+import {
   runUpgrade,
   UpgradeAction,
   UpgradeConflictRequest,
@@ -125,7 +131,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'show' &&
     args.command !== 'search' &&
     args.command !== 'diff' &&
-    args.command !== 'reset'
+    args.command !== 'reset' &&
+    args.command !== 'uninstall'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -221,6 +228,120 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ list: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'uninstall') {
+    if (args.keepConfig && args.removeConfig) {
+      process.stderr.write(
+        paint('✗ uninstall: --keep-config and --remove-config are mutually exclusive.\n', 'red')
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+
+    // Decisions: explicit flags > prompts > safe defaults.
+    // Defaults under --yes / non-interactive:
+    //   - section: REMOVE (uninstall implies full removal of agentcohort presence)
+    //   - config:  KEEP   (preserves customizations for a future re-install)
+    let removeClaudeSection = !args.keepClaudeMd;
+    let removeConfigDecision = args.removeConfig
+      ? true
+      : args.keepConfig
+      ? false
+      : false; // safe default
+    try {
+      // Always preview first so the user sees the full plan.
+      const preview = runUninstall({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        dryRun: true,
+        backup: args.backup,
+        removeClaudeSection,
+        removeConfig: removeConfigDecision,
+        now: () => new Date(),
+      });
+
+      if (preview.exitCode === 1) {
+        // Nothing to uninstall.
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            paint('Nothing to uninstall — no bundled files, section, or config found.\n', 'gray')
+          );
+        }
+        return 0;
+      }
+
+      if (args.dryRun) {
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatUninstallResult(preview));
+        }
+        return 0;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatUninstallPlan(preview, {
+          removeClaudeSection,
+          removeConfig: removeConfigDecision,
+        }));
+        // Prompt for config when not explicitly flagged.
+        if (!args.keepConfig && !args.removeConfig && preview.entries.some((e) => e.kind === 'kept-config')) {
+          const wantRemoveConfig = await confirm({
+            message:
+              'Also remove `.agentcohort.json` (your customized models / gates)?',
+            default: false,
+          });
+          if (wantRemoveConfig) removeConfigDecision = true;
+        }
+        const proceed = await confirm({
+          message: 'Proceed with uninstall?',
+          default: false,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ uninstall: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runUninstall({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        dryRun: false,
+        backup: args.backup,
+        removeClaudeSection,
+        removeConfig: removeConfigDecision,
+        now: () => new Date(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatUninstallResult(result));
+      }
+      return result.exitCode === 1 ? 0 : result.exitCode; // exit 1 already handled above
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -955,6 +1076,64 @@ function formatSearchFile(f: SearchFileResult): string {
     out.push(paint(`  ${num}:`, 'gray') + ' ' + highlightLine(m));
   }
   return out.join('\n');
+}
+
+function formatUninstallPlan(
+  preview: UninstallResult,
+  decisions: { removeClaudeSection: boolean; removeConfig: boolean }
+): string {
+  const s = preview.summary;
+  const out: string[] = [];
+  out.push(paint('\nagentcohort uninstall — plan', 'bold', 'cyan'));
+  out.push(paint(`Project: ${preview.cwd}\n`, 'gray'));
+  out.push(
+    paint('Will remove:', 'bold') +
+      `  ${s.removedFiles} bundled file(s)` +
+      (decisions.removeClaudeSection ? ', CLAUDE.md routing section' : '') +
+      (decisions.removeConfig ? ', .agentcohort.json' : '')
+  );
+  out.push(
+    paint('Will keep:', 'bold') +
+      `   ${s.keptUserFiles} user-authored file(s)` +
+      (decisions.removeClaudeSection ? '' : ', CLAUDE.md routing section') +
+      (decisions.removeConfig ? '' : ', .agentcohort.json (if present)')
+  );
+  out.push('');
+  return out.join('\n');
+}
+
+function formatUninstallResult(result: UninstallResult): string {
+  const out: string[] = [];
+  const head = result.dryRun ? 'Dry run' : 'Uninstall';
+  out.push(paint(`\n${head} complete`, 'bold', 'green'));
+  out.push(paint(`Project: ${result.cwd}\n`, 'gray'));
+  const tag = result.dryRun ? '[dry-run] ' : '';
+  for (const e of result.entries) {
+    out.push(formatUninstallEntry(e, tag));
+  }
+  const s = result.summary;
+  const segs: string[] = [];
+  segs.push(`${s.removedFiles} removed`);
+  segs.push(`${s.keptUserFiles} kept (user)`);
+  if (s.sectionRemoved) segs.push('CLAUDE.md section stripped');
+  if (s.configRemoved) segs.push('.agentcohort.json removed');
+  if (s.backupCount > 0) segs.push(`${s.backupCount} backup(s)`);
+  out.push('');
+  out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  return out.join('\n') + '\n';
+}
+
+function formatUninstallEntry(e: UninstallEntry, tag: string): string {
+  const label: Record<UninstallActionKind, string> = {
+    'removed-bundled-file': paint('remove', 'red'),
+    'kept-user-file': paint('keep   (user)', 'gray'),
+    'removed-routing-section': paint('strip section', 'red'),
+    'kept-claude-md': paint('keep   (claude.md)', 'gray'),
+    'removed-config': paint('remove', 'red'),
+    'kept-config': paint('keep   (config)', 'gray'),
+  };
+  const bk = e.backupPath ? paint(`  (backup: ${e.backupPath})`, 'gray') : '';
+  return `  ${tag}${label[e.kind]}  ${e.path}${bk}`;
 }
 
 const RESET_DISP_COLOR: Record<ResetDisposition, 'green' | 'yellow' | 'red'> = {

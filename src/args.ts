@@ -23,6 +23,12 @@ export interface ParsedArgs {
   exact: boolean;
   /** (search) Treat the query as an ECMAScript regex. */
   regex: boolean;
+  /** (uninstall) Keep `.agentcohort.json` instead of removing it. */
+  keepConfig: boolean;
+  /** (uninstall) Force-remove `.agentcohort.json` (overrides the safe-default keep). */
+  removeConfig: boolean;
+  /** (uninstall) Keep the CLAUDE.md routing section instead of stripping it. */
+  keepClaudeMd: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -43,6 +49,9 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--commands': 'commands',
   '--exact': 'exact',
   '--regex': 'regex',
+  '--keep-config': 'keepConfig',
+  '--remove-config': 'removeConfig',
+  '--keep-claude-md': 'keepClaudeMd',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -67,6 +76,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     commands: false,
     exact: false,
     regex: false,
+    keepConfig: false,
+    removeConfig: false,
+    keepClaudeMd: false,
     help: false,
     version: false,
     unknown: [],
@@ -165,6 +177,13 @@ ${b('COMMANDS')}
                        outdated files automatically and prompts before
                        overwriting any file the user has edited locally.
                        Preserves .agentcohort.json (models + gates).
+  uninstall            Mutating. Remove the bundled-set files from
+                       .claude/ and strip the agentcohort routing
+                       section from CLAUDE.md. NEVER deletes user-
+                       authored agents / commands. Defaults: section
+                       removed, .agentcohort.json kept (so a re-install
+                       picks up your customizations). Use
+                       --keep-claude-md / --remove-config to override.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -194,6 +213,12 @@ ${b('OPTIONS')}
                        instead of the case-insensitive default.
   --regex              (search only) Treat the query as an ECMAScript
                        regex (per-line match, /g flag implied).
+  --keep-config        (uninstall only) Keep .agentcohort.json instead
+                       of prompting / removing it.
+  --remove-config      (uninstall only) Remove .agentcohort.json
+                       (overrides the safe-default keep).
+  --keep-claude-md     (uninstall only) Keep the CLAUDE.md routing
+                       section instead of stripping it.
   --json               (doctor, lint, status, list, show, search, diff)
                        Emit the report as JSON instead of human-readable
                        text. Exit code is the same in both modes.
