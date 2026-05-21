@@ -190,6 +190,41 @@ Coming in future versions
 The "Coming in future versions" block is a static roadmap pointer, not
 a release commitment. Targets may shift.
 
+### Discovery — `agentcohort list`
+
+Enumerate what is available in the current install. Where `status`
+summarizes counts, `list` shows the items themselves — useful when you
+want to know which agent handles what, which slash-command to invoke,
+or what each review gate guards.
+
+```bash
+agentcohort list             # everything (agents + commands + gates)
+agentcohort list agents      # bundled agents + per-file install status + model tier
+agentcohort list commands    # slash-commands + descriptions + install status
+agentcohort list gates       # review gates + current mode + when each pauses
+agentcohort list --json      # any of the above, machine-readable
+```
+
+Example output (`agentcohort list agents`):
+
+```text
+Agents (16/16 installed)
+  dispatcher            haiku (cheap)   installed
+    └─ Read-only task classifier. Reads the user's request, classifies it into a routing tier…
+  feature-implementer   opus (premium)  installed
+    └─ Implement an approved plan exactly. No scope expansion, no opportunistic refactors…
+  solution-architect    opus (premium)  user-edited
+    └─ Propose 2–3 implementation approaches with explicit trade-offs…
+  …
+```
+
+Per-file status is the same 4-state integrity verdict that powers
+`doctor` and `upgrade` (`installed` / `outdated` / `user-edited` /
+`unstamped`), plus `missing` (bundled but not installed) and `extra`
+(installed locally but not part of the bundled set — user-authored
+agents land here). Gate entries label their mode source as `(config)`
+when `.agentcohort.json` overrides the default and `(default)` otherwise.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -338,6 +373,9 @@ runs.
 | `agentcohort lint --json` | Same checks, machine-readable JSON output. |
 | `agentcohort status` | **Read-only** at-a-glance report: version, agent / command counts, CLAUDE.md routing presence, resolved model tiers + gate modes, OpenWolf activity, planned upcoming features. |
 | `agentcohort status --json` | Same data, machine-readable JSON output. |
+| `agentcohort list` | **Read-only** discovery: enumerates bundled agents, commands and gates with per-file install status, model tier, descriptions and gate trigger blurbs. |
+| `agentcohort list agents \| commands \| gates` | Same as above scoped to one section. |
+| `agentcohort list --json` | Same data, machine-readable JSON output. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

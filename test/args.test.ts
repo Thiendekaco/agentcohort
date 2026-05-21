@@ -54,6 +54,40 @@ describe('helpText', () => {
   });
 });
 
+describe('parseArgs — list subcommand', () => {
+  it('parses `list` without a scope', () => {
+    const a = parseArgs(['list']);
+    expect(a.command).toBe('list');
+    expect(a.subcommand).toBeNull();
+  });
+
+  it('parses `list agents` with scope captured into subcommand', () => {
+    const a = parseArgs(['list', 'agents']);
+    expect(a.command).toBe('list');
+    expect(a.subcommand).toBe('agents');
+    expect(a.unknown).toEqual([]);
+  });
+
+  it('routes the second positional under `list` to subcommand', () => {
+    const a = parseArgs(['list', 'gates', '--json']);
+    expect(a.subcommand).toBe('gates');
+    expect(a.json).toBe(true);
+  });
+
+  it('does NOT capture a subcommand for non-list commands', () => {
+    const a = parseArgs(['init', 'extra']);
+    expect(a.command).toBe('init');
+    expect(a.subcommand).toBeNull();
+    expect(a.unknown).toEqual(['extra']);
+  });
+
+  it('treats a third positional under `list` as unknown', () => {
+    const a = parseArgs(['list', 'agents', 'huh']);
+    expect(a.subcommand).toBe('agents');
+    expect(a.unknown).toEqual(['huh']);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);
