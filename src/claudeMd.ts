@@ -151,6 +151,28 @@ export function upsertSection(content: string, sectionMarkdown: string): UpsertR
   return { result, mode: 'replace' };
 }
 
+/**
+ * Strip the Agentcohort section from `content`, leaving the rest of
+ * the file intact. Returns `null` when no section was present.
+ *
+ *  - Content before the section keeps its trailing whitespace
+ *    collapsed to a single trailing newline.
+ *  - Content after the section keeps its leading whitespace collapsed.
+ *  - When BOTH exist, exactly one blank line separates them.
+ *  - When the section was the only content, returns the empty string.
+ */
+export function removeSection(content: string): string | null {
+  const start = findSectionStart(content);
+  if (start === -1) return null;
+  const end = findSectionEnd(content, start);
+  const before = content.slice(0, start);
+  const after = content.slice(end);
+  if (before === '' && after === '') return '';
+  if (before === '') return after.replace(/^\s+/, '');
+  if (after === '') return before.replace(/\s+$/, '') + '\n';
+  return before.replace(/\s+$/, '') + '\n\n' + after.replace(/^\s+/, '');
+}
+
 /** Minimal CLAUDE.md created when the project has none. */
 export function buildInitialClaudeMd(sectionMarkdown: string): string {
   const header = [

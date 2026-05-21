@@ -4,6 +4,7 @@ import {
   buildInitialClaudeMd,
   findSectionStart,
   hasSection,
+  removeSection,
   sectionMatches,
   upsertSection,
 } from '../src/claudeMd';
@@ -114,5 +115,51 @@ describe('buildInitialClaudeMd', () => {
     expect(out).toContain('# Project Guidance for Claude Code');
     expect(out).toContain(SECTION_TITLE);
     expect(hasSection(out)).toBe(true);
+  });
+});
+
+describe('removeSection', () => {
+  it('returns null when no section is present', () => {
+    expect(removeSection('# Project\n\nno section here\n')).toBeNull();
+  });
+
+  it('preserves content BEFORE the section', () => {
+    const doc = `# Project\n\nintro\n\n${SECTION}`;
+    const out = removeSection(doc);
+    expect(out).not.toBeNull();
+    expect(out!).toContain('# Project');
+    expect(out!).toContain('intro');
+    expect(out!).not.toContain(SECTION_TITLE);
+  });
+
+  it('preserves content AFTER the section', () => {
+    const doc = `# Project\n\n${SECTION}\n\n# Trailing\n\ntail content\n`;
+    const out = removeSection(doc);
+    expect(out).not.toBeNull();
+    expect(out!).toContain('# Trailing');
+    expect(out!).toContain('tail content');
+    expect(out!).not.toContain(SECTION_TITLE);
+  });
+
+  it('keeps exactly one blank line between surrounding content', () => {
+    const doc = `# Project\n\nintro\n\n${SECTION}\n\n# Trailing\n\ntail\n`;
+    const out = removeSection(doc)!;
+    // No three-or-more consecutive newlines.
+    expect(/\n{3,}/.test(out)).toBe(false);
+    expect(out).toContain('intro\n\n# Trailing');
+  });
+
+  it('returns "" when the file contained only the section', () => {
+    const doc = SECTION;
+    expect(removeSection(doc)).toBe('');
+  });
+
+  it('round-trips with upsertSection: removeSection(upsertSection(empty)) == empty after trim', () => {
+    const empty = '# Project\n';
+    const withSection = upsertSection(empty, SECTION).result;
+    const out = removeSection(withSection)!;
+    // The header survives.
+    expect(out).toContain('# Project');
+    expect(hasSection(out)).toBe(false);
   });
 });
