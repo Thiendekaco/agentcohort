@@ -97,6 +97,38 @@ Exit codes are CI-friendly:
 | `1` | Healthy with warnings, or unhealthy with errors |
 | `2` | Internal failure (filesystem error, etc.) |
 
+### Content lint — `agentcohort lint`
+
+Complements `doctor`. Where `doctor` checks **structure** (files
+present, config valid, integrity stamps intact), `lint` checks
+**content quality** of files the user has touched:
+
+```bash
+agentcohort lint            # human-readable, colored, exits 0/1
+agentcohort lint --json     # same checks, JSON for CI
+```
+
+Also strictly read-only. Sections:
+
+- **Agent frontmatter**: every `.claude/agents/*.md` has valid `---`
+  delimiters and required keys (`name`, `description`, `tools`,
+  `model`). Broken frontmatter is an **error**.
+- **Boot directive**: bundled agents still contain the
+  `<!-- boot-directive-start --> ... <!-- boot-directive-end -->`
+  block (the bootstrap context that teaches each agent to read
+  `CLAUDE.md` / OpenWolf / installed skills). User-authored custom
+  agents are exempt.
+- **Model references**: each agent's `model:` value resolves to
+  either a tier alias (`opus` / `sonnet` / `haiku`) or one of the
+  concrete IDs in your `.agentcohort.json` models map. Unrecognized
+  values are a **warning**.
+- **CLAUDE.md references**: backtick-wrapped slash commands
+  (\`/dev-flow\`, etc.) in the user-owned part of `CLAUDE.md` point
+  at commands actually installed under `.claude/commands/`. Stale
+  references are a **warning**.
+
+Exit codes follow the same `0` / `1` / `2` convention as `doctor`.
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -239,8 +271,10 @@ runs.
 | `agentcohort init --force` | Overwrite conflicts / replace the routing section without prompting. |
 | `agentcohort init --backup` | Always back up a file before overwriting it. |
 | `agentcohort config` | Re-prompt model tiers + human review gates; show + apply diffs. |
-| `agentcohort doctor` | **Read-only** health check of the current project's install. Exits 0 healthy, 1 on warning/error, 2 on internal failure. |
+| `agentcohort doctor` | **Read-only** structural health check (files present, config valid, integrity stamps intact). Exits 0 healthy, 1 on warning/error, 2 on internal failure. |
 | `agentcohort doctor --json` | Same checks, machine-readable JSON output. |
+| `agentcohort lint` | **Read-only** content-quality check (frontmatter valid, boot directive intact, model refs resolve, slash-command refs in CLAUDE.md exist). Exits 0 clean, 1 on warning/error, 2 internal. |
+| `agentcohort lint --json` | Same checks, machine-readable JSON output. |
 | `agentcohort --version` | Print the version. |
 | `agentcohort --help` | Show help. |
 
