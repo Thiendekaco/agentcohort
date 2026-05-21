@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Thiendekaco/agentcohort/compare/v0.4.0...v0.5.0) (2026-05-21)
+
+
+### Miscellaneous Chores
+
+* trigger 0.5.0 release ([#23](https://github.com/Thiendekaco/agentcohort/issues/23)) ([90ac29d](https://github.com/Thiendekaco/agentcohort/commit/90ac29d5440110fbc953de67fb5f15e501cad89d))
+
 ## [0.4.0](https://github.com/Thiendekaco/agentcohort/compare/v0.3.1...v0.4.0) (2026-05-20)
 
 
