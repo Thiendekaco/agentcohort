@@ -7,6 +7,7 @@ import { promptModelStrategy } from './promptModels';
 import { promptGates } from './promptGates';
 import { runConfigCmd } from './configCmd';
 import { runDoctor, DoctorReport, Severity } from './doctor';
+import { runLint, LintReport, LintSeverity } from './lint';
 import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getTemplatesDir, getVersion } from './paths';
@@ -76,7 +77,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   if (
     args.command !== 'init' &&
     args.command !== 'config' &&
-    args.command !== 'doctor'
+    args.command !== 'doctor' &&
+    args.command !== 'lint'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -98,6 +100,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(paint(`✗ doctor: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'lint') {
+    try {
+      const report = runLint({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatLintReport(report));
+      }
+      return report.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ lint: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -236,6 +257,35 @@ function formatDoctorReport(report: DoctorReport): string {
     healthy: paint('Summary: Healthy.', 'green'),
     warnings: paint('Summary: Healthy with warnings.', 'yellow'),
     errors: paint('Summary: Unhealthy — fix the errors above.', 'red'),
+  }[report.summary];
+  out.push(summaryLine);
+  return out.join('\n') + '\n';
+}
+
+function formatLintReport(report: LintReport): string {
+  const SEVERITY_GLYPH: Record<LintSeverity, string> = {
+    ok: paint('✓', 'green'),
+    warn: paint('⚠', 'yellow'),
+    error: paint('✗', 'red'),
+  };
+  const out: string[] = [];
+  out.push(paint('\nAgentcohort Lint', 'bold', 'cyan'));
+  out.push(paint(`Project: ${report.cwd}\n`, 'gray'));
+
+  for (const section of report.sections) {
+    out.push(paint(`${section.name}:`, 'bold'));
+    for (const check of section.checks) {
+      out.push(`  ${SEVERITY_GLYPH[check.severity]} ${check.message}`);
+      for (const d of check.detail ?? []) {
+        out.push(paint(`      └─ ${d}`, 'gray'));
+      }
+    }
+    out.push('');
+  }
+
+  const summaryLine = {
+    clean: paint('Summary: Clean.', 'green'),
+    issues: paint('Summary: Issues found — review the items above.', 'yellow'),
   }[report.summary];
   out.push(summaryLine);
   return out.join('\n') + '\n';
