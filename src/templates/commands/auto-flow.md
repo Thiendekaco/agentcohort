@@ -22,27 +22,44 @@ non-negotiable.
 
 ## Step 2 — Surface the plan
 
-Print the dispatcher's short two-option panel **verbatim** — do not add
-extra fields, do not expand the agent roster, do not re-introduce the
-old `Classification / Pipeline / Agents / Skipping / Next step` lines.
-The two-option block IS the approval gate.
+Print the dispatcher's short recommendation block (`Recommended` /
+`Cost` / `Why` / optional `Escalation`) verbatim — do not expand the
+agent roster, do not re-introduce the old `Classification / Pipeline /
+Agents / Skipping / Next step` lines.
 
-Then wait for the user. Accept these replies:
+Then use the **`AskUserQuestion`** tool to surface the approval gate:
 
-- **`1`**, **`y`**, or an empty/Enter reply → run the recommended next
-  step exactly as the dispatcher named it.
-- **`2`** → the user wants to override. Print the flow list below and
-  wait for a letter. After the letter, run that flow on `$ARGUMENTS`.
-- **`abort`** → stop. Do nothing else.
-- **`gates ±<name>`** (`gates +architect`, `gates -plan`, …) →
-  override a single gate for THIS task only (does not modify
-  `.agentcohort.json`). Update the `Gates:` line and re-print the
-  panel, then re-ask. Valid gate names: `architect`, `plan`,
-  `bottleneck`, `root-cause`, `expert-council`.
-- Anything else (a free-text question, a clarification) → answer it,
-  then re-print the panel and wait again. Never silently run.
+- `question`: `"<recommended slash command> — proceed?"` (interpolate
+  the dispatcher's `Recommended:` value, e.g. `"/dev-flow — proceed?"`)
+- `header`: `"Routing"`
+- `options`:
+  - `Run recommended` — Run the dispatcher's recommended next step.
+  - `Pick a different flow` — Show the full list of flows.
 
-### Flow list (only print when user replies `2`)
+Map the answer:
+
+- **`Run recommended`** → execute the next step (Step 3 table).
+- **`Pick a different flow`** → print the text flow list below, then
+  wait for the user's letter.
+- **`Other` (free-form)** → parse the text:
+  - `abort` → stop. Do nothing else.
+  - `gates ±<name>` (e.g. `gates +architect`, `gates -plan`) → override
+    a single gate for THIS task only (does not modify
+    `.agentcohort.json`). Update the `Gates:` line and re-issue the
+    `AskUserQuestion`. Valid gate names: `architect`, `plan`,
+    `bottleneck`, `root-cause`, `expert-council`.
+  - Anything else → treat as a clarifying question; answer it, then
+    re-issue the `AskUserQuestion`. Never silently run.
+
+**Fallback** when `AskUserQuestion` is unavailable (older Claude Code,
+headless / scripted runs): print a numbered text panel and accept
+`1` / `y` / Enter as "Run recommended", `2` as "Pick a different
+flow", `abort` to stop, `gates ±<name>` to override.
+
+### Flow list (only print when user picks "Pick a different flow")
+
+The full list contains 9 items, which exceeds `AskUserQuestion`'s
+4-option limit — surface it as a text menu instead:
 
 ```
 Pick a flow:
@@ -61,7 +78,7 @@ Reply with the letter (e.g. c), or `back` to return to the recommendation.
 
 If the user picks a letter, run that command on `$ARGUMENTS` immediately
 — their explicit choice IS the approval; do not re-prompt. If they pick
-`back`, re-print the recommendation panel.
+`back`, re-issue the recommendation `AskUserQuestion`.
 
 ## Step 3 — Execute the chosen next step
 
