@@ -84,7 +84,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (
       (parsed.command === 'list' ||
         parsed.command === 'show' ||
-        parsed.command === 'search') &&
+        parsed.command === 'search' ||
+        parsed.command === 'diff') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -141,6 +142,14 @@ ${b('COMMANDS')}
                        --agents / --commands. Searches installed files
                        first; bundled-only files are still scanned so
                        you can discover what's available pre-install.
+  diff [name]          Read-only diff between installed templates and
+                       the currently-bundled versions. With no name,
+                       prints a unified diff for every file that
+                       differs (missing / outdated / user-edited /
+                       unstamped). With a name (or \`agent/<name>\` /
+                       \`command/<name>\`), diffs just that file.
+                       Exits 0 when nothing differs, 1 when something
+                       does — CI-friendly.
   upgrade              Sync the project's .claude/ templates and CLAUDE.md
                        routing section to the bundled version. Refreshes
                        outdated files automatically and prompts before
@@ -169,14 +178,14 @@ ${b('OPTIONS')}
                        render + stamp (= exactly what \`init\` / \`upgrade\`
                        would write). Useful to compare against an
                        edited installed copy.
-  --agents             (search only) Restrict the search to agent files.
-  --commands           (search only) Restrict the search to command files.
+  --agents             (search, diff) Restrict the operation to agent files.
+  --commands           (search, diff) Restrict the operation to command files.
   --exact              (search only) Case-sensitive literal match
                        instead of the case-insensitive default.
   --regex              (search only) Treat the query as an ECMAScript
                        regex (per-line match, /g flag implied).
-  --json               (doctor, lint, status, list, show, search) Emit
-                       the report as JSON instead of human-readable
+  --json               (doctor, lint, status, list, show, search, diff)
+                       Emit the report as JSON instead of human-readable
                        text. Exit code is the same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
