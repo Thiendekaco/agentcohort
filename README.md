@@ -225,6 +225,33 @@ Per-file status is the same 4-state integrity verdict that powers
 agents land here). Gate entries label their mode source as `(config)`
 when `.agentcohort.json` overrides the default and `(default)` otherwise.
 
+### Inspect one file — `agentcohort show <name>`
+
+Pairs with `list`: where `list` enumerates names, `show` prints one
+body so you can read the actual prompt without opening the file
+manually.
+
+```bash
+agentcohort show dispatcher           # auto-pick agent or command
+agentcohort show agent/dispatcher     # disambiguate (also: agents/dispatcher)
+agentcohort show command/auto-flow    # disambiguate (also: commands/auto-flow)
+agentcohort show dispatcher --raw     # bundled body, pre-render, pre-stamp
+agentcohort show dispatcher --bundled # bundled body, render + stamp applied
+agentcohort show dispatcher --json    # JSON wrapper with metadata
+```
+
+Defaults to the **installed** file (truthful — exactly what Claude
+Code reads). When the file is not installed locally, falls back to
+the bundled body with a banner so you can still preview what would
+land. When a name matches both an agent and a command (a user-authored
+agent overshadowing a slash-command name, for instance), `show`
+prints **both** with clear `── Agent: <name> ──` / `── Command: <name> ──`
+headers.
+
+Integrity verdict is shown for installed files so you know at a glance
+whether the body still matches its stamp (`unchanged` / `outdated` /
+`user-edited` / `unstamped`).
+
 ### Human review gates (configurable)
 
 Some pipeline stages produce **load-bearing decisions** — an
@@ -376,6 +403,11 @@ runs.
 | `agentcohort list` | **Read-only** discovery: enumerates bundled agents, commands and gates with per-file install status, model tier, descriptions and gate trigger blurbs. |
 | `agentcohort list agents \| commands \| gates` | Same as above scoped to one section. |
 | `agentcohort list --json` | Same data, machine-readable JSON output. |
+| `agentcohort show <name>` | **Read-only** inspect one file. Prints the installed body (falls back to bundled with a banner). When a name matches both an agent and a command, prints both with clear headers. |
+| `agentcohort show agent/<name> \| command/<name>` | Disambiguate when a name lives in both kinds. |
+| `agentcohort show --raw <name>` | Print the bundled template body untouched — pre-render, pre-stamp. |
+| `agentcohort show --bundled <name>` | Print the bundled template after render + stamp (= what `init` / `upgrade` would write). |
+| `agentcohort show --json <name>` | Same data, machine-readable JSON output. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

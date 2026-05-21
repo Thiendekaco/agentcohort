@@ -11,6 +11,10 @@ export interface ParsedArgs {
   reconfigure: boolean;
   json: boolean;
   diff: boolean;
+  /** Show the bundled template body untouched — pre-render, pre-stamp. */
+  raw: boolean;
+  /** Show the bundled template after render + stamp (what init/upgrade would write). */
+  bundled: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -25,6 +29,8 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--reconfigure': 'reconfigure',
   '--json': 'json',
   '--diff': 'diff',
+  '--raw': 'raw',
+  '--bundled': 'bundled',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -43,6 +49,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     reconfigure: false,
     json: false,
     diff: false,
+    raw: false,
+    bundled: false,
     help: false,
     version: false,
     unknown: [],
@@ -57,7 +65,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
     } else if (parsed.command === null) {
       parsed.command = arg;
-    } else if (parsed.command === 'list' && parsed.subcommand === null) {
+    } else if (
+      (parsed.command === 'list' || parsed.command === 'show') &&
+      parsed.subcommand === null
+    ) {
       parsed.subcommand = arg;
     } else {
       parsed.unknown.push(arg);
@@ -98,6 +109,13 @@ ${b('COMMANDS')}
                        tier), commands (slash-commands with descriptions),
                        gates (review gates + current mode + when each
                        pauses). Omit scope to show all three.
+  show <name>          Print the body of one installed or bundled
+                       agent / command. Use \`agent/<name>\` or
+                       \`command/<name>\` to disambiguate; when a name
+                       matches both kinds, both bodies are printed with
+                       clear headers. Defaults to the installed file
+                       (falls back to bundled with a banner when not
+                       installed).
   upgrade              Sync the project's .claude/ templates and CLAUDE.md
                        routing section to the bundled version. Refreshes
                        outdated files automatically and prompts before
@@ -120,9 +138,15 @@ ${b('OPTIONS')}
   --diff               (upgrade only) Print the unified diff of every
                        file that would be refreshed or overwritten, in
                        addition to the per-conflict prompt's diff view.
-  --json               (doctor, lint, status, list) Emit the report as
-                       JSON instead of human-readable text. Exit code is
-                       the same in both modes.
+  --raw                (show only) Print the bundled template untouched
+                       — pre-render, pre-stamp. Source-of-truth view.
+  --bundled            (show only) Print the bundled template after
+                       render + stamp (= exactly what \`init\` / \`upgrade\`
+                       would write). Useful to compare against an
+                       edited installed copy.
+  --json               (doctor, lint, status, list, show) Emit the
+                       report as JSON instead of human-readable text.
+                       Exit code is the same in both modes.
   --help, -h           Show this help.
   --version, -v        Print the version.
 
