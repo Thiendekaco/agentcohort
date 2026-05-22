@@ -91,3 +91,59 @@ describe('every bundled agent inherits the git safety boundary', () => {
     });
   }
 });
+
+describe('per-agent safety reinforcement (defense in depth)', () => {
+  const agentFiles = readdirSync(AGENT_DIR).filter((f) => f.endsWith('.md'));
+
+  function hasBash(body: string): boolean {
+    const m = body.match(/^tools:\s*(.+?)\s*$/m);
+    if (!m) return false;
+    return m[1]!.split(',').map((s) => s.trim()).includes('Bash');
+  }
+
+  const bashAgents = agentFiles.filter((f) =>
+    hasBash(readFileSync(join(AGENT_DIR, f), 'utf8'))
+  );
+  const noBashAgents = agentFiles.filter(
+    (f) => !hasBash(readFileSync(join(AGENT_DIR, f), 'utf8'))
+  );
+
+  it('identifies exactly the expected agents (Bash vs no-Bash) — sanity', () => {
+    expect(bashAgents.length).toBeGreaterThanOrEqual(11);
+    expect(noBashAgents.length).toBeGreaterThanOrEqual(5);
+    expect(bashAgents.length + noBashAgents.length).toBe(agentFiles.length);
+  });
+
+  for (const f of bashAgents) {
+    it(`${f} (has Bash) carries the per-agent safety block`, () => {
+      const body = readFileSync(join(AGENT_DIR, f), 'utf8');
+      expect(body).toContain('<!-- agent-git-safety-start -->');
+      expect(body).toContain('<!-- agent-git-safety-end -->');
+      expect(body).toContain(
+        'Git safety (binding — re-stated because this agent has shell access)'
+      );
+      // Reinforcement repeats the most-dangerous forbidden commands.
+      for (const cmd of ['git restore', 'git reset --hard', 'git clean -f']) {
+        expect(body, `${f} per-agent block missing "${cmd}"`).toContain(cmd);
+      }
+    });
+
+    it(`${f} per-agent safety block sits OUTSIDE the boot-directive markers`, () => {
+      // The boot directive is auto-synced; the per-agent block must live
+      // outside it so `sync-boot-directive` doesn't rewrite it on every
+      // directive update.
+      const body = readFileSync(join(AGENT_DIR, f), 'utf8');
+      const bootEnd = body.indexOf('<!-- boot-directive-end -->');
+      const perAgentStart = body.indexOf('<!-- agent-git-safety-start -->');
+      expect(bootEnd).toBeGreaterThan(-1);
+      expect(perAgentStart).toBeGreaterThan(bootEnd);
+    });
+  }
+
+  for (const f of noBashAgents) {
+    it(`${f} (no Bash) does NOT carry the per-agent block (it would be noise)`, () => {
+      const body = readFileSync(join(AGENT_DIR, f), 'utf8');
+      expect(body).not.toContain('<!-- agent-git-safety-start -->');
+    });
+  }
+});
