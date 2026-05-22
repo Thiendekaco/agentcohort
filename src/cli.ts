@@ -61,6 +61,12 @@ import {
 } from './pack';
 import { scanSkills, Skill, SkillsScanResult } from './skills';
 import {
+  runRefreshSkills,
+  RefreshResult,
+  RefreshEntry,
+  RefreshDisposition,
+} from './refreshSkills';
+import {
   buildContext as buildCompletionContext,
   generateCompletion,
   COMPLETION_SHELLS,
@@ -157,7 +163,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'add' &&
     args.command !== 'export' &&
     args.command !== 'import' &&
-    args.command !== 'skills'
+    args.command !== 'skills' &&
+    args.command !== 'refresh-skills'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -401,6 +408,82 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 130;
       }
       process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'refresh-skills') {
+    const cwd = process.cwd();
+    const existingConfig = loadConfig(cwd);
+    const models = resolveModels(existingConfig);
+    const skills = scanSkills({ cwd }).skills;
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    try {
+      const preview = runRefreshSkills({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        models,
+        skills,
+        dryRun: true,
+        backup: args.backup,
+      });
+
+      const willChange = preview.entries.some((e) => e.disposition === 'updated');
+
+      if (args.dryRun || !willChange) {
+        const display: RefreshResult = { ...preview, dryRun: args.dryRun };
+        if (args.json) {
+          process.stdout.write(JSON.stringify(display, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatRefreshResult(display));
+        }
+        return display.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatRefreshResult(preview));
+        const proceed = await confirm({
+          message: `Refresh skill list in ${preview.entries.filter((e) => e.disposition === 'updated').length} agent(s)?`,
+          default: true,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ refresh-skills: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runRefreshSkills({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        models,
+        skills,
+        dryRun: false,
+        backup: args.backup,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatRefreshResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ refresh-skills: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -1729,6 +1812,66 @@ function formatAddPreview(preview: AddResult): string {
     );
   } else if (preview.kind === 'agent' && preview.archetype) {
     out.push(paint(`  Archetype: ${preview.archetype}`, 'gray'));
+  }
+  return out.join('\n') + '\n';
+}
+
+const REFRESH_DISP_COLOR: Record<RefreshDisposition, 'green' | 'yellow' | 'gray' | 'red'> = {
+  noop: 'green',
+  updated: 'yellow',
+  'skipped-local': 'gray',
+  'skipped-missing-markers': 'gray',
+  'skipped-user-edited': 'red',
+};
+
+function formatRefreshResult(result: RefreshResult): string {
+  const out: string[] = [];
+  const tag = result.dryRun ? '[dry-run] ' : '';
+  const updated = result.entries.filter((e) => e.disposition === 'updated').length;
+  const noop = result.entries.filter((e) => e.disposition === 'noop').length;
+  const skippedLocal = result.entries.filter(
+    (e) => e.disposition === 'skipped-local'
+  ).length;
+  const skippedUserEdited = result.entries.filter(
+    (e) => e.disposition === 'skipped-user-edited'
+  ).length;
+  const skippedMissing = result.entries.filter(
+    (e) => e.disposition === 'skipped-missing-markers'
+  ).length;
+
+  if (result.entries.length === 0) {
+    out.push(paint('refresh-skills: no installed agents found', 'gray'));
+    return out.join('\n') + '\n';
+  }
+
+  const head = result.dryRun ? 'Refresh plan' : 'Refresh complete';
+  out.push(
+    paint(head, 'bold') +
+      paint(`  (baking ${result.skillCount} skill(s))`, 'gray')
+  );
+  for (const e of result.entries) {
+    if (e.disposition === 'noop') continue; // suppress noise — only show entries that matter
+    const disp = paint(e.disposition, REFRESH_DISP_COLOR[e.disposition]);
+    const bk = e.backupPath ? paint(`  (backup: ${e.backupPath})`, 'gray') : '';
+    out.push(`  ${tag}${disp}  ${e.name}${bk}`);
+  }
+
+  // Summary footer.
+  const segs: string[] = [];
+  if (updated > 0) segs.push(`${updated} updated`);
+  if (noop > 0) segs.push(paint(`${noop} unchanged`, 'gray'));
+  if (skippedLocal > 0) segs.push(paint(`${skippedLocal} local (skipped)`, 'gray'));
+  if (skippedMissing > 0) segs.push(paint(`${skippedMissing} missing-markers (skipped)`, 'gray'));
+  if (skippedUserEdited > 0)
+    segs.push(paint(`${skippedUserEdited} user-edited (skipped — run \`upgrade\` first)`, 'red'));
+  if (segs.length > 0) out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  if (skippedUserEdited > 0) {
+    out.push(
+      paint(
+        '  Hand-edited files were left untouched. Reconcile via `agentcohort upgrade` (or accept the edits as local with `agentcohort add <name> --override --force`), then re-run.',
+        'gray'
+      )
+    );
   }
   return out.join('\n') + '\n';
 }

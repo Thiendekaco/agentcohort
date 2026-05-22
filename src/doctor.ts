@@ -11,7 +11,11 @@ import {
 import { renderAgentTemplate } from './render';
 import { compareIntegrity, IntegrityVerdict } from './stamp';
 import { hasLocalMarker } from './localMarker';
-import { injectSkillsList } from './skillsBoot';
+import {
+  injectSkillsList,
+  hasSkillsRegion,
+  extractSkillsRegion,
+} from './skillsBoot';
 import type { Skill } from './skills';
 
 /**
@@ -364,6 +368,11 @@ function checkTemplateGroup(args: {
   const userEdited: string[] = [];
   const outdated: string[] = [];
   const unstamped: string[] = [];
+  // "Skill drift" is reported separately from `outdated` so the user
+  // gets a concrete remediation hint (`refresh-skills`) instead of the
+  // catch-all `init/upgrade`. Only applies to agents (commands don't
+  // have a skills boot region).
+  const skillsStale: string[] = [];
 
   for (const f of bundledFiles) {
     if (!installedSet.has(f)) {
@@ -383,6 +392,24 @@ function checkTemplateGroup(args: {
     if (verdict === 'user-edited') userEdited.push(f);
     else if (verdict === 'outdated') outdated.push(f);
     else if (verdict === 'unstamped') unstamped.push(f);
+
+    // Independent skill-drift check for agents: only flag when the
+    // installed file has the marker pair AND the embedded skill region
+    // differs from what `init` would write today. This is reported
+    // additionally — it overlaps with `outdated` when only skills
+    // changed, but the message tells the user exactly which command
+    // to run.
+    if (args.render && hasSkillsRegion(installed)) {
+      const installedRegion = extractSkillsRegion(installed);
+      const expectedRegion = extractSkillsRegion(rendered);
+      if (
+        installedRegion !== null &&
+        expectedRegion !== null &&
+        installedRegion !== expectedRegion
+      ) {
+        skillsStale.push(f);
+      }
+    }
   }
 
   // "Installed" count includes overrides — they are the user's chosen
@@ -432,6 +459,14 @@ function checkTemplateGroup(args: {
       severity: 'warn',
       message: `${unstamped.length} file(s) have no integrity stamp (pre-0.4.0 install)`,
       detail: unstamped,
+    });
+  }
+  if (skillsStale.length > 0) {
+    checks.push({
+      id: `${args.group}.skills-stale`,
+      severity: 'warn',
+      message: `${skillsStale.length} agent(s) have a stale skill list — run \`agentcohort refresh-skills\` to re-bake`,
+      detail: skillsStale,
     });
   }
   if (localNew.length > 0 || localOverride.length > 0) {

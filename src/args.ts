@@ -258,9 +258,15 @@ ${b('COMMANDS')}
   skills               Read-only. Detect Claude Code skills installed
                        in this environment (user / plugin / project
                        scope) and list them with their descriptions.
-                       Used by \`init\` (PR2) to bake the skill list
-                       into each agent's boot directive so the
-                       subagent can invoke skills via the Skill tool.
+                       Used by \`init\` to bake the skill list into
+                       each agent's boot directive so the subagent
+                       can invoke skills via the Skill tool.
+  refresh-skills       Mutating. Re-bake the boot-directive skill list
+                       in every installed bundled agent. Use when you
+                       install or remove a skill AFTER \`init\` and
+                       want the agents to pick up the new list without
+                       doing a full \`upgrade\`. Local files and
+                       user-edited bodies are left untouched.
   export               Read-only. Bundle every local file (\`add\` /
                        \`add --override\` output) plus \`.agentcohort.json\`
                        into a portable JSON pack. With \`--out=<path>\`
