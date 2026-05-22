@@ -424,6 +424,51 @@ agentcohort uninstall --yes            # skip the confirm (non-interactive ok)
 Override either with `--keep-claude-md` / `--remove-config` /
 `--keep-config`.
 
+### Add a custom agent or command — `agentcohort add <name>`
+
+Scaffold a new user-authored agent or slash command. The file is
+marked with `_agentcohort_local: true` in its YAML frontmatter so
+future `agentcohort upgrade` runs leave it alone.
+
+```bash
+# New agent — kind picks the scaffold (analyst | implementer | reviewer | gate | empty)
+agentcohort add my-domain-expert --kind=analyst --description="Billing-domain expert" --model=opus
+
+# New slash command
+agentcohort add command/my-flow --description="Custom workflow for nightly builds"
+
+# Override a bundled agent — copies the bundled body verbatim and marks it local
+agentcohort add bug-hunter --override
+```
+
+Disambiguating prefixes: `agent/<name>` and `command/<name>` (bare
+name defaults to `agent`).
+
+| Disposition | Meaning |
+|---|---|
+| `created` | new local file written |
+| `override-created` | bundled file with same name was copied + marked local |
+| `refused-bundled` | bundled `<name>` exists; pass `--override` to make a local copy |
+| `refused-exists` | a file already sits at the target path; pass `--force` (or remove it manually) |
+| `refused-invalid-name` | name must be lowercase letters, digits, hyphens (must start with a letter or digit) |
+
+Behavior notes:
+
+- **Always interactive by default.** Confirms before writing. Pass
+  `--yes` (or `--force`) to skip; in non-interactive contexts (CI,
+  pipes), `add` refuses without explicit consent.
+- **`--dry-run` previews** the exact body that would be written,
+  without touching the filesystem. Combine with `--json` for
+  machine-readable preview.
+- **CLAUDE.md is NOT auto-edited.** If you want the dispatcher in
+  `/auto-flow` to know about your new agent, add a routing rule
+  manually under `# Agentcohort Routing Rules` in your CLAUDE.md.
+- **Override semantics:** `--override` is a one-shot snapshot. If
+  the bundled body changes in a later `agentcohort upgrade`, your
+  local copy is **untouched** — that's the whole point of marking
+  it local. To pull bundled improvements back in, use
+  `agentcohort reset <name>` (which reverts the local override).
+
 ### Shell completion — `agentcohort completion <shell>`
 
 Tab-complete subcommands, `list` scopes, shell names, and the agent /
@@ -636,6 +681,11 @@ runs.
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
+| `agentcohort add <name>` | **Mutating** — scaffold a new user-authored agent or command marked `_agentcohort_local: true` (so `upgrade` leaves it alone). Defaults to `agent`; use `command/<name>` for commands. |
+| `agentcohort add <name> --kind=<archetype>` | Agent archetype: `analyst` / `implementer` / `reviewer` / `gate` / `empty` (default `empty`). |
+| `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |
+| `agentcohort add <name> --override` | Allow scaffolding a local copy of a bundled file with the same name (your edits win over the bundled body). |
+| `agentcohort add <name> --dry-run \| --yes \| --force` | Preview / skip prompt / overwrite an existing file at the target path. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |

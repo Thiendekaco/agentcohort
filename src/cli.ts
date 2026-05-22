@@ -47,6 +47,11 @@ import {
   UninstallActionKind,
 } from './uninstall';
 import {
+  runAdd,
+  AddResult,
+  AgentArchetype,
+} from './add';
+import {
   buildContext as buildCompletionContext,
   generateCompletion,
   COMPLETION_SHELLS,
@@ -139,7 +144,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'diff' &&
     args.command !== 'reset' &&
     args.command !== 'uninstall' &&
-    args.command !== 'completion'
+    args.command !== 'completion' &&
+    args.command !== 'add'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -381,6 +387,156 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 130;
       }
       process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'add') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ add: missing <name>. Usage: agentcohort add <name> | agent/<name> | command/<name> [--kind=<archetype>] [--description=<text>] [--model=<tier>] [--override]\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    const kindFromQuery: 'agent' | 'command' =
+      query.startsWith('command/') || query.startsWith('commands/')
+        ? 'command'
+        : 'agent';
+    // Validate archetype.
+    let archetype: AgentArchetype | null = null;
+    if (args.kind !== null) {
+      const allowed: AgentArchetype[] = [
+        'analyst',
+        'implementer',
+        'reviewer',
+        'gate',
+        'empty',
+      ];
+      if (!allowed.includes(args.kind as AgentArchetype)) {
+        process.stderr.write(
+          paint(
+            `✗ add: --kind must be one of ${allowed.join(', ')} (got '${args.kind}').\n`,
+            'red'
+          )
+        );
+        return 1;
+      }
+      if (kindFromQuery === 'command') {
+        process.stderr.write(
+          paint(
+            '✗ add: --kind is only valid when adding an agent (got a command query).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+      archetype = args.kind as AgentArchetype;
+    }
+    // Validate model alias.
+    let model: 'haiku' | 'sonnet' | 'opus' | null = null;
+    if (args.model !== null) {
+      const allowedModels = ['haiku', 'sonnet', 'opus'] as const;
+      if (!(allowedModels as readonly string[]).includes(args.model)) {
+        process.stderr.write(
+          paint(
+            `✗ add: --model must be one of ${allowedModels.join(', ')} (got '${args.model}').\n`,
+            'red'
+          )
+        );
+        return 1;
+      }
+      if (kindFromQuery === 'command') {
+        process.stderr.write(
+          paint(
+            '✗ add: --model is only valid when adding an agent (got a command query).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+      model = args.model as 'haiku' | 'sonnet' | 'opus';
+    }
+
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+
+    try {
+      const preview = runAdd({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        archetype,
+        description: args.description,
+        model,
+        override: args.override,
+        force: args.force,
+        dryRun: true,
+      });
+      const isMutating =
+        preview.disposition === 'created' ||
+        preview.disposition === 'override-created';
+
+      if (args.dryRun || !isMutating) {
+        const display: AddResult = { ...preview, dryRun: args.dryRun };
+        if (args.json) {
+          process.stdout.write(JSON.stringify(display, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatAddResult(display));
+        }
+        return display.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatAddPreview(preview));
+        const proceed = await confirm({
+          message: `Write ${preview.installedPath}?`,
+          default: true,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ add: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runAdd({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        archetype,
+        description: args.description,
+        model,
+        override: args.override,
+        force: args.force,
+        dryRun: false,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatAddResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ add: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -1256,6 +1412,127 @@ function formatResetPreview(preview: ResetResult): string {
       out.push('');
       out.push(diff.trimEnd());
     }
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatAddResult(result: AddResult): string {
+  const out: string[] = [];
+  const head = `${result.dryRun ? '[dry-run] ' : ''}add`;
+  const label = `${result.kind}/${result.name}`;
+  switch (result.disposition) {
+    case 'created':
+      out.push(
+        paint(head, 'bold') + '  ' + label + '  ' + paint('created', 'green')
+      );
+      out.push(paint(`  Wrote: ${result.installedPath}`, 'gray'));
+      if (result.kind === 'agent' && result.archetype) {
+        out.push(paint(`  Archetype: ${result.archetype}`, 'gray'));
+      }
+      out.push(
+        paint(
+          `  Marked with \`_agentcohort_local: true\` — \`agentcohort upgrade\` will leave it alone.`,
+          'gray'
+        )
+      );
+      out.push(
+        paint(
+          `  Next: edit the file to customize the role, then add a routing rule under \`# Agentcohort Routing Rules\` in CLAUDE.md if you want the dispatcher to know about it.`,
+          'gray'
+        )
+      );
+      break;
+    case 'override-created':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('override-created', 'green')
+      );
+      out.push(paint(`  Wrote: ${result.installedPath}`, 'gray'));
+      out.push(
+        paint(
+          `  Body copied from the bundled template and marked as local.`,
+          'gray'
+        )
+      );
+      out.push(
+        paint(
+          `  Your edits now win — upgrades will leave this file alone. Use \`agentcohort reset ${label}\` to revert to the bundled body.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-exists':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-exists', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ A file already exists at ${result.installedPath}.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    Pass --force to overwrite it (no backup unless --backup), or remove it manually first.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-bundled':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-bundled', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ '${result.name}' is the name of a bundled ${result.kind}. Pick a different name, or pass --override to scaffold a local copy that wins over the bundled body.`,
+          'red'
+        )
+      );
+      break;
+    case 'refused-invalid-name':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-invalid-name', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ '${result.name}' is not a valid file name. Use lowercase letters, digits, and hyphens (must start with a letter or digit).`,
+          'red'
+        )
+      );
+      break;
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatAddPreview(preview: AddResult): string {
+  const out: string[] = [];
+  const label = `${preview.kind}/${preview.name}`;
+  out.push(paint('About to add:', 'bold') + '  ' + label);
+  out.push(paint(`  Target: ${preview.installedPath}`, 'gray'));
+  if (preview.disposition === 'override-created') {
+    out.push(
+      paint(
+        `  This is a local copy of the bundled ${preview.kind} '${preview.name}'.`,
+        'gray'
+      )
+    );
+  } else if (preview.kind === 'agent' && preview.archetype) {
+    out.push(paint(`  Archetype: ${preview.archetype}`, 'gray'));
   }
   return out.join('\n') + '\n';
 }
