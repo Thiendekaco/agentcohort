@@ -6,6 +6,11 @@ import { stampTemplate, compareIntegrity } from './stamp';
 import { unifiedDiff } from './textDiff';
 import { hasLocalMarker } from './localMarker';
 import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 
 /**
@@ -78,6 +83,8 @@ export interface DiffOptions {
   models: ModelsConfig;
   /** Skills baked into the bundled body (matches install/upgrade output). */
   skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 export function runDiff(opts: DiffOptions): DiffResult {
@@ -95,6 +102,7 @@ export function runDiff(opts: DiffOptions): DiffResult {
   })();
 
   const entries: DiffFileEntry[] = [];
+  const affinity = resolveAffinity(opts.affinity);
   for (const kind of kindsToScan) {
     entries.push(
       ...scanKind({
@@ -104,6 +112,7 @@ export function runDiff(opts: DiffOptions): DiffResult {
         models: opts.models,
         targetName,
         skills: opts.skills ?? [],
+        affinity,
       })
     );
   }
@@ -164,6 +173,7 @@ function scanKind(args: {
   models: ModelsConfig;
   targetName: string | null;
   skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): DiffFileEntry[] {
   const subdir = args.kind === 'agent' ? 'agents' : 'commands';
   const installedDir = join(args.cwd, '.claude', subdir);
@@ -192,6 +202,7 @@ function scanKind(args: {
         bundledExists: bundledFiles.has(f),
         models: args.models,
         skills: args.skills,
+        affinity: args.affinity,
       })
     );
   }
@@ -208,6 +219,7 @@ function buildEntry(args: {
   bundledExists: boolean;
   models: ModelsConfig;
   skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): DiffFileEntry {
   const installedPath = join(args.installedDir, args.filename);
   const bundledPath = join(args.bundledDir, args.filename);
@@ -220,7 +232,8 @@ function buildEntry(args: {
     let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
     if (args.kind === 'agent') {
-      rendered = injectSkillsList(rendered, args.skills);
+      const relevant = relevantSkills(args.name, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
     }
     bundledRenderedStamped = stampTemplate(rendered);
   }

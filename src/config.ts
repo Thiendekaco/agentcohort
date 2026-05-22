@@ -26,6 +26,13 @@ export interface AgentcohortConfig {
   models: ModelsConfig;
   /** Optional. When absent or partial, resolveGates() fills with DEFAULT_GATES. */
   gates?: PartialGatesConfig;
+  /**
+   * Optional. Per-skill list of agent names that should see this
+   * skill in their boot directive's skill region. Merges over the
+   * built-in `DEFAULT_AFFINITY` (a user entry replaces the default
+   * for that key). Use `[]` to mute a default-mapped skill.
+   */
+  skillAffinity?: Record<string, string[]>;
 }
 
 const TIERS = ['premium', 'mid', 'cheap'] as const;
@@ -66,6 +73,7 @@ export function validateConfig(raw: unknown): AgentcohortConfig {
     out[tier] = v;
   }
   const gates = validateGates(obj.gates);
+  const skillAffinity = validateSkillAffinity(obj.skillAffinity);
   const result: AgentcohortConfig = {
     version: 1,
     models: out as unknown as ModelsConfig,
@@ -73,7 +81,37 @@ export function validateConfig(raw: unknown): AgentcohortConfig {
   if (gates !== undefined) {
     result.gates = gates;
   }
+  if (skillAffinity !== undefined) {
+    result.skillAffinity = skillAffinity;
+  }
   return result;
+}
+
+function validateSkillAffinity(
+  raw: unknown
+): Record<string, string[]> | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    fail('skillAffinity must be an object mapping skill names to agent-name arrays');
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Record<string, string[]> = {};
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (!Array.isArray(v)) {
+      fail(`skillAffinity.${key} must be an array of agent names`);
+    }
+    const agents: string[] = [];
+    for (let i = 0; i < v.length; i += 1) {
+      const a = v[i];
+      if (typeof a !== 'string' || a.trim().length === 0) {
+        fail(`skillAffinity.${key}[${i}] must be a non-empty string`);
+      }
+      agents.push(a);
+    }
+    out[key] = agents;
+  }
+  return out;
 }
 
 function validateGates(raw: unknown): PartialGatesConfig | undefined {
@@ -134,6 +172,13 @@ function serializeConfig(cfg: AgentcohortConfig): string {
       if (v !== undefined) gates[name] = v;
     }
     ordered.gates = gates;
+  }
+  if (cfg.skillAffinity) {
+    // Sort keys for deterministic serialization.
+    const sortedKeys = Object.keys(cfg.skillAffinity).sort();
+    const affinity: Record<string, string[]> = {};
+    for (const k of sortedKeys) affinity[k] = cfg.skillAffinity[k]!;
+    ordered.skillAffinity = affinity;
   }
   return JSON.stringify(ordered, null, 2) + '\n';
 }
