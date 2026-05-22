@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/Thiendekaco/agentcohort/compare/v0.7.0...v0.8.0) (2026-05-22)
+
+
+### Features
+
+* ship 0.8.0 — Theme A (extensibility): `add` + overlay-aware + portable packs ([#42](https://github.com/Thiendekaco/agentcohort/issues/42)) ([0eebf5f](https://github.com/Thiendekaco/agentcohort/commit/0eebf5f82fd16e0737930886c7e94ef10384c62f))
+
 ## [0.7.0](https://github.com/Thiendekaco/agentcohort/compare/v0.6.0...v0.7.0) (2026-05-21)
 
 
