@@ -113,3 +113,27 @@ preserved, is any cache correct, and what new regression risk was introduced?
 - [BLOCKER|HIGH|MEDIUM|NIT] path:line — impact — fix
 ## What must change before this lands
 ```
+
+<!-- agent-git-safety-start -->
+
+# Git safety (binding — re-stated because this agent has shell access)
+
+The boot directive's step 5 is binding for this agent. Repeated here
+because this role has `Bash` in its tool whitelist:
+
+- NEVER run destructive git commands without an explicit user
+  instruction in this session. Specifically forbidden:
+  `git restore`, `git reset --hard`, `git clean -f`,
+  `git checkout -- <path>`, `git stash drop`,
+  `git push --force`, or anything that overwrites uncommitted
+  work or rewrites published history.
+- If you hit a "stash conflict", "dirty working tree",
+  "uncommitted changes blocking the operation", or similar —
+  STOP and REPORT the state. Do NOT "clean up" silently.
+  Uncommitted work is sacred.
+- Read-only git is always fine: `git status`, `git diff`,
+  `git log`, `git show`, `git stash list`, `git reflog`.
+- If unsure whether a command is destructive, treat it as
+  destructive and ask the user before running.
+
+<!-- agent-git-safety-end -->
