@@ -29,6 +29,14 @@ export interface ParsedArgs {
   removeConfig: boolean;
   /** (uninstall) Keep the CLAUDE.md routing section instead of stripping it. */
   keepClaudeMd: boolean;
+  /** (add) Allow scaffolding a local copy of an existing bundled file. */
+  override: boolean;
+  /** (add) Archetype for new agents: analyst | implementer | reviewer | gate | empty. */
+  kind: string | null;
+  /** (add) Frontmatter `description:` value. */
+  description: string | null;
+  /** (add) Frontmatter `model:` alias (haiku | sonnet | opus). */
+  model: string | null;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -52,10 +60,22 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--keep-config': 'keepConfig',
   '--remove-config': 'removeConfig',
   '--keep-claude-md': 'keepClaudeMd',
+  '--override': 'override',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
   '-v': 'version',
+};
+
+/**
+ * Flags that take a value via `--flag=value` syntax. Space-separated
+ * form (`--flag value`) is intentionally NOT supported — it would
+ * require lookahead and risks swallowing positionals on user typos.
+ */
+const VALUE_FLAGS: Record<string, 'kind' | 'description' | 'model'> = {
+  '--kind': 'kind',
+  '--description': 'description',
+  '--model': 'model',
 };
 
 /** Pure, deterministic argument parser. Unknown tokens are collected, not thrown. */
@@ -79,12 +99,35 @@ export function parseArgs(argv: string[]): ParsedArgs {
     keepConfig: false,
     removeConfig: false,
     keepClaudeMd: false,
+    override: false,
+    kind: null,
+    description: null,
+    model: null,
     help: false,
     version: false,
     unknown: [],
   };
   for (const arg of argv) {
-    if (arg.startsWith('-')) {
+    if (arg.startsWith('--')) {
+      const eqIdx = arg.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = arg.slice(0, eqIdx);
+        const value = arg.slice(eqIdx + 1);
+        const valueKey = VALUE_FLAGS[key];
+        if (valueKey !== undefined) {
+          parsed[valueKey] = value;
+          continue;
+        }
+        parsed.unknown.push(arg);
+        continue;
+      }
+      const key = FLAGS[arg];
+      if (key) {
+        (parsed as unknown as Record<string, boolean>)[key] = true;
+      } else {
+        parsed.unknown.push(arg);
+      }
+    } else if (arg.startsWith('-')) {
       const key = FLAGS[arg];
       if (key) {
         (parsed as unknown as Record<string, boolean>)[key] = true;
@@ -99,7 +142,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         parsed.command === 'search' ||
         parsed.command === 'diff' ||
         parsed.command === 'reset' ||
-        parsed.command === 'completion') &&
+        parsed.command === 'completion' ||
+        parsed.command === 'add') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -190,6 +234,18 @@ ${b('COMMANDS')}
                        removed, .agentcohort.json kept (so a re-install
                        picks up your customizations). Use
                        --keep-claude-md / --remove-config to override.
+  add <name>           Mutating. Scaffold a new user-authored agent or
+                       command under .claude/. The file is stamped with
+                       \`_agentcohort_local: true\` so future \`upgrade\`
+                       runs leave it alone. Use \`agent/<name>\` or
+                       \`command/<name>\` to disambiguate (bare name
+                       defaults to agent). For agents, pass
+                       \`--kind=<archetype>\` (analyst | implementer |
+                       reviewer | gate | empty) and optionally
+                       \`--description=<text>\` / \`--model=<tier>\`.
+                       Pass \`--override\` to scaffold a local copy of
+                       a same-named bundled file (your edits then win
+                       over the bundled body).
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -225,6 +281,16 @@ ${b('OPTIONS')}
                        (overrides the safe-default keep).
   --keep-claude-md     (uninstall only) Keep the CLAUDE.md routing
                        section instead of stripping it.
+  --override           (add only) Scaffold a local copy of a bundled
+                       file with the same name. Without it, \`add\`
+                       refuses to clobber bundled names.
+  --kind=<archetype>   (add only) Agent archetype: analyst, implementer,
+                       reviewer, gate, or empty. Defaults to empty.
+                       Determines the scaffolded role + tools list.
+  --description=<txt>  (add only) Frontmatter \`description:\` for the
+                       new agent / command. Defaults to a TODO line.
+  --model=<tier>       (add only, agents) Model tier alias: haiku /
+                       sonnet / opus. Defaults to sonnet.
   --json               (doctor, lint, status, list, show, search, diff)
                        Emit the report as JSON instead of human-readable
                        text. Exit code is the same in both modes.
