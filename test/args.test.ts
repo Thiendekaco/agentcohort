@@ -300,6 +300,55 @@ describe('parseArgs — add command + value flags', () => {
   });
 });
 
+describe('parseArgs — export / import commands', () => {
+  it('parses `export` with no subcommand', () => {
+    const a = parseArgs(['export']);
+    expect(a.command).toBe('export');
+    expect(a.subcommand).toBeNull();
+  });
+
+  it('parses --out=<path> as a value flag', () => {
+    const a = parseArgs(['export', '--out=./pack.json']);
+    expect(a.out).toBe('./pack.json');
+  });
+
+  it('parses --no-config as a boolean flag', () => {
+    const a = parseArgs(['export', '--no-config']);
+    expect(a.noConfig).toBe(true);
+  });
+
+  it('captures the pack path as subcommand for `import`', () => {
+    const a = parseArgs(['import', './pack.json']);
+    expect(a.command).toBe('import');
+    expect(a.subcommand).toBe('./pack.json');
+  });
+
+  it('parses --force / --backup / --dry-run on import', () => {
+    const a = parseArgs([
+      'import',
+      './pack.json',
+      '--force',
+      '--backup',
+      '--dry-run',
+    ]);
+    expect(a.force).toBe(true);
+    expect(a.backup).toBe(true);
+    expect(a.dryRun).toBe(true);
+  });
+
+  it('value flags + boolean flags compose in any order', () => {
+    const a = parseArgs([
+      'export',
+      '--no-config',
+      '--out=./pack.json',
+      '--json',
+    ]);
+    expect(a.noConfig).toBe(true);
+    expect(a.out).toBe('./pack.json');
+    expect(a.json).toBe(true);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

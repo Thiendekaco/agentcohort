@@ -49,6 +49,8 @@ const TOP_COMMANDS: readonly string[] = [
   'upgrade',
   'completion',
   'add',
+  'export',
+  'import',
 ];
 
 const ALL_FLAGS: readonly string[] = [
@@ -70,6 +72,7 @@ const ALL_FLAGS: readonly string[] = [
   '--remove-config',
   '--keep-claude-md',
   '--override',
+  '--no-config',
   '--help',
   '-h',
   '--version',

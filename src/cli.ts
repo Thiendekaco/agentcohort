@@ -52,6 +52,14 @@ import {
   AgentArchetype,
 } from './add';
 import {
+  runExport,
+  runImport,
+  ExportResult,
+  ImportResult,
+  ImportFileEntry,
+  PackValidationError,
+} from './pack';
+import {
   buildContext as buildCompletionContext,
   generateCompletion,
   COMPLETION_SHELLS,
@@ -145,7 +153,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'reset' &&
     args.command !== 'uninstall' &&
     args.command !== 'completion' &&
-    args.command !== 'add'
+    args.command !== 'add' &&
+    args.command !== 'export' &&
+    args.command !== 'import'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -387,6 +397,122 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 130;
       }
       process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'export') {
+    try {
+      const result = runExport({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        outPath: args.out,
+        includeConfig: !args.noConfig,
+        version: getVersion(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else if (args.out === null) {
+        // Write the pack body itself to stdout; a human-readable
+        // summary still goes to stderr so piping `agentcohort export >
+        // pack.json` does the right thing.
+        process.stdout.write(
+          JSON.stringify(result.pack, null, 2) + '\n'
+        );
+        process.stderr.write(formatExportSummary(result));
+      } else {
+        process.stdout.write(formatExportSummary(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ export: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'import') {
+    const packPath = args.subcommand;
+    if (packPath === null || packPath === '') {
+      process.stderr.write(
+        paint(
+          '✗ import: missing <pack>. Usage: agentcohort import <path/to/pack.json> [--force] [--no-config] [--backup] [--dry-run]\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    try {
+      const preview = runImport({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        packPath,
+        force: args.force,
+        importConfig: !args.noConfig,
+        backup: args.backup,
+        dryRun: true,
+      });
+
+      if (args.dryRun) {
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatImportResult(preview));
+        }
+        return preview.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatImportPlan(preview));
+        const proceed = await confirm({
+          message: `Apply pack ${packPath}?`,
+          default: true,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ import: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runImport({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        packPath,
+        force: args.force,
+        importConfig: !args.noConfig,
+        backup: args.backup,
+        dryRun: false,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatImportResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      if (err instanceof PackValidationError) {
+        process.stderr.write(paint(`✗ import: ${err.message}\n`, 'red'));
+        return 1;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ import: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -1576,6 +1702,123 @@ function formatAddPreview(preview: AddResult): string {
     out.push(paint(`  Archetype: ${preview.archetype}`, 'gray'));
   }
   return out.join('\n') + '\n';
+}
+
+function formatExportSummary(result: ExportResult): string {
+  const out: string[] = [];
+  if (result.exitCode === 1) {
+    out.push(
+      paint(
+        'Nothing to export — no `_agentcohort_local: true` files and no `.agentcohort.json` found.',
+        'gray'
+      )
+    );
+    return out.join('\n') + '\n';
+  }
+  const head = result.outPath
+    ? `${paint('exported', 'bold', 'green')} → ${result.outPath}`
+    : paint('exported (stdout)', 'bold', 'green');
+  out.push(head);
+  out.push(
+    paint(
+      `  ${result.fileCount} local file(s), config ${
+        result.configIncluded ? 'included' : 'skipped'
+      }, schema v${result.pack.schemaVersion}.`,
+      'gray'
+    )
+  );
+  if (!result.configIncluded) {
+    out.push(
+      paint(
+        '  (Pass without `--no-config` to bundle `.agentcohort.json` too.)',
+        'gray'
+      )
+    );
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportPlan(preview: ImportResult): string {
+  const out: string[] = [];
+  out.push(paint('About to apply pack:', 'bold') + '  ' + preview.packPath);
+  out.push(
+    paint(
+      `  Schema v${preview.packSchemaVersion}, produced by agentcohort ${preview.packAgentcohortVersion}.`,
+      'gray'
+    )
+  );
+  for (const f of preview.files) {
+    out.push('  ' + formatImportFileEntry(f, '[dry-run] '));
+  }
+  if (preview.configHandled !== 'none-in-pack') {
+    const label =
+      preview.configHandled === 'refused-exists'
+        ? paint('refused (exists)', 'red')
+        : preview.configHandled === 'skipped'
+        ? paint('skipped (--no-config)', 'gray')
+        : preview.configHandled === 'written'
+        ? paint('write', 'green')
+        : paint('overwrite', 'yellow');
+    out.push(`  ${label}  ${preview.configPath}`);
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportResult(result: ImportResult): string {
+  const out: string[] = [];
+  const tag = result.dryRun ? '[dry-run] ' : '';
+  const head = result.dryRun ? 'Pack preview' : 'Pack imported';
+  const color = result.exitCode === 0 ? 'green' : 'yellow';
+  out.push(paint(head, 'bold', color) + '  ' + result.packPath);
+  for (const f of result.files) {
+    out.push('  ' + formatImportFileEntry(f, tag));
+  }
+  if (result.configHandled !== 'none-in-pack') {
+    const target = result.configPath ?? '(unknown)';
+    const label = {
+      written: paint('config written', 'green'),
+      overwritten: paint('config overwritten', 'yellow'),
+      'refused-exists': paint('config refused (exists — pass --force)', 'red'),
+      skipped: paint('config skipped (--no-config)', 'gray'),
+      'none-in-pack': '',
+    }[result.configHandled];
+    out.push(`  ${tag}${label}  ${target}`);
+    if (result.configBackupPath) {
+      out.push(paint(`    (backup: ${result.configBackupPath})`, 'gray'));
+    }
+  }
+  // Footer.
+  const created = result.files.filter((f) => f.disposition === 'created').length;
+  const overwritten = result.files.filter((f) => f.disposition === 'overwritten').length;
+  const refused = result.files.filter((f) => f.disposition.startsWith('refused-')).length;
+  const segs: string[] = [];
+  if (created > 0) segs.push(`${created} created`);
+  if (overwritten > 0) segs.push(`${overwritten} overwritten`);
+  if (refused > 0) segs.push(paint(`${refused} refused`, 'red'));
+  if (segs.length > 0) out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  if (refused > 0) {
+    out.push(
+      paint(
+        '  Re-run with --force (and optionally --backup) to overwrite existing local files.',
+        'gray'
+      )
+    );
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportFileEntry(f: ImportFileEntry, tag: string): string {
+  const label = `${f.kind}/${f.name}`;
+  const kindTag = f.isOverride ? paint('[override]', 'cyan') : paint('[local]', 'cyan');
+  const dispColor =
+    f.disposition === 'created'
+      ? 'green'
+      : f.disposition === 'overwritten'
+      ? 'yellow'
+      : 'red';
+  const disp = paint(f.disposition, dispColor);
+  const bk = f.backupPath ? paint(`  (backup: ${f.backupPath})`, 'gray') : '';
+  return `${tag}${disp}  ${kindTag} ${label}  → ${f.installedPath}${bk}`;
 }
 
 const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray' | 'cyan'> = {

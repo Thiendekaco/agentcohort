@@ -473,6 +473,66 @@ Behavior notes:
   target path — pass `--override --force` to authorize replacing
   that bundled-installed copy with the local one.
 
+### Share customizations across projects — `agentcohort export` / `import`
+
+Bundle every local file (`add` / `add --override` output) plus
+`.agentcohort.json` into a portable JSON pack, then restore it in a
+different project:
+
+```bash
+# Source project — write to a file
+agentcohort export --out=team-pack.json
+
+# Or write to stdout for piping (summary goes to stderr)
+agentcohort export > team-pack.json
+
+# Skip the config (model tiers / gates) if you don't want to share it
+agentcohort export --out=team-pack.json --no-config
+
+# Destination project — preview, then apply
+agentcohort import team-pack.json --dry-run
+agentcohort import team-pack.json --yes
+
+# Overwrite existing local files (with optional backup)
+agentcohort import team-pack.json --force --backup
+```
+
+What goes in the pack:
+
+- **All local agents + commands** — every file under `.claude/` that
+  carries `_agentcohort_local: true`. Both local-new (your custom
+  agents) and local-override (your tweaks to bundled agents) ship.
+- **`.agentcohort.json`** — model tier strategy + gate modes. Use
+  `--no-config` to omit it.
+- **What does NOT ship**: bundled files you hand-edited without
+  marking local. Those are "drift" — use `agentcohort add --override`
+  to mark them as intentional customizations first, then export.
+
+| Disposition | Meaning |
+|---|---|
+| `created` | new local file written to the destination |
+| `overwritten` | existing local file replaced (with `--force`) |
+| `refused-exists` | a file already sits at the target path; re-run with `--force` |
+
+Pack format (`schemaVersion: 1`):
+
+```json
+{
+  "schemaVersion": 1,
+  "agentcohort": "0.8.0",
+  "exportedAt": "2026-05-22T12:00:00.000Z",
+  "config": { "version": 1, "models": { ... }, "gates": { ... } },
+  "files": [
+    { "kind": "agent",   "name": "my-expert",  "isOverride": false, "content": "..." },
+    { "kind": "agent",   "name": "bug-hunter", "isOverride": true,  "content": "..." },
+    { "kind": "command", "name": "my-flow",    "isOverride": false, "content": "..." }
+  ]
+}
+```
+
+The pack is plain JSON — `cat | jq` away from being inspectable.
+No new runtime dependencies are added.
+
 ### How local files are treated by the rest of the CLI
 
 The `_agentcohort_local: true` marker is the single source of truth.
@@ -705,6 +765,14 @@ runs.
 | `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |
 | `agentcohort add <name> --override` | Allow scaffolding a local copy of a bundled file with the same name (your edits win over the bundled body). |
 | `agentcohort add <name> --dry-run \| --yes \| --force` | Preview / skip prompt / overwrite an existing file at the target path. |
+| `agentcohort export` | **Read-only** — bundle every local file + `.agentcohort.json` into a portable pack on stdout (machine-readable JSON; human summary to stderr). |
+| `agentcohort export --out=<path>` | Write the pack to a file instead of stdout. |
+| `agentcohort export --no-config` | Exclude `.agentcohort.json` from the pack. |
+| `agentcohort export --json` | Emit the export result (paths + counts) as JSON. |
+| `agentcohort import <pack>` | **Mutating** — apply a pack produced by `export`. Creates local files + `.agentcohort.json`. Refuses to overwrite existing files unless `--force`. |
+| `agentcohort import <pack> --force --backup` | Overwrite existing local files and `.agentcohort.json`, keeping `.backup-YYYYMMDD-HHMMSS` copies. |
+| `agentcohort import <pack> --no-config` | Skip the `.agentcohort.json` in the pack. |
+| `agentcohort import <pack> --dry-run \| --yes` | Preview / skip the interactive confirm. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
