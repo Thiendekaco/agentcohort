@@ -348,3 +348,95 @@ Body.
     expect(local!.detail).toContain('my-new.md');
   });
 });
+
+describe('runDoctor — skill-drift detection (PR3)', () => {
+  it('warns about stale skill lists with a refresh-skills hint', async () => {
+    const cwd = project();
+    // Install with two skills baked in.
+    await runInit({
+      cwd,
+      yes: true,
+      dryRun: false,
+      force: false,
+      backup: false,
+      interactive: false,
+      now: () => new Date(2026, 4, 25, 12, 0, 0),
+      templatesDir: TEMPLATES,
+      models: { ...DEFAULT_MODELS },
+      skills: [
+        {
+          name: 'skill-original',
+          description: 'original',
+          scope: 'user',
+          path: '/x',
+          skillMdPath: '/x/SKILL.md',
+          hasExtras: false,
+        },
+      ],
+    });
+    // Run doctor with a DIFFERENT skill list (simulating user installed a new skill).
+    const report = runDoctor({
+      cwd,
+      templatesDir: TEMPLATES,
+      skills: [
+        {
+          name: 'skill-original',
+          description: 'original',
+          scope: 'user',
+          path: '/x',
+          skillMdPath: '/x/SKILL.md',
+          hasExtras: false,
+        },
+        {
+          name: 'skill-NEW',
+          description: 'just added',
+          scope: 'user',
+          path: '/y',
+          skillMdPath: '/y/SKILL.md',
+          hasExtras: false,
+        },
+      ],
+    });
+    const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
+    const skillsStale = agentsSection.checks.find((c) => c.id === 'agents.skills-stale');
+    expect(skillsStale).toBeDefined();
+    expect(skillsStale!.message).toContain('refresh-skills');
+    expect(skillsStale!.severity).toBe('warn');
+    // Detail lists actual file names.
+    expect(skillsStale!.detail).toContain('bug-hunter.md');
+  });
+
+  it('does NOT warn when the embedded skill list matches current scan', async () => {
+    const cwd = project();
+    const sameSkills = [
+      {
+        name: 'unchanged',
+        description: 'no drift here',
+        scope: 'user' as const,
+        path: '/x',
+        skillMdPath: '/x/SKILL.md',
+        hasExtras: false,
+      },
+    ];
+    await runInit({
+      cwd,
+      yes: true,
+      dryRun: false,
+      force: false,
+      backup: false,
+      interactive: false,
+      now: () => new Date(2026, 4, 25, 12, 0, 0),
+      templatesDir: TEMPLATES,
+      models: { ...DEFAULT_MODELS },
+      skills: sameSkills,
+    });
+    const report = runDoctor({
+      cwd,
+      templatesDir: TEMPLATES,
+      skills: sameSkills,
+    });
+    const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
+    const skillsStale = agentsSection.checks.find((c) => c.id === 'agents.skills-stale');
+    expect(skillsStale).toBeUndefined();
+  });
+});

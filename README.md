@@ -545,6 +545,34 @@ skills propagate next time you upgrade). `reset` on a single agent
 re-bakes the current list too. Local-override agents (created via
 `add --override`) are skipped — they own their content.
 
+**To refresh just the skill list (without doing a full `upgrade`)**,
+use `agentcohort refresh-skills`:
+
+```bash
+agentcohort refresh-skills              # preview + interactive confirm
+agentcohort refresh-skills --dry-run    # preview only
+agentcohort refresh-skills --yes        # apply, no prompt
+agentcohort refresh-skills --backup     # back up each rewritten file
+```
+
+This is narrower than `upgrade` — only the boot directive's skill
+region is rewritten, leaving everything else untouched. Safety
+contract:
+
+| File state | What refresh-skills does |
+|---|---|
+| Skill region matches current → noop | reported as `noop` |
+| Skill region stale, rest matches bundled | rewrites, reports `updated` |
+| Has `_agentcohort_local: true` | reported as `skipped-local`, never touched |
+| Body outside skill region also diverges from bundled | reported as `skipped-user-edited` — must reconcile via `upgrade` first |
+| Missing the `<!-- agentcohort-skills-* -->` markers (legacy install) | reported as `skipped-missing-markers` — run `upgrade` once to land the markers |
+
+**`agentcohort doctor` warns about skill drift** with a check named
+`agents.skills-stale`. The message points directly at
+`refresh-skills` so you don't have to guess between `upgrade` and
+`refresh-skills` — drift in just the skill list is a refresh-skills
+job; drift in the bundled template body is an upgrade job.
+
 When no skills are detected, the boot directive keeps a generic
 fallback: "Check available skills. If any skill matches what you're
 about to do, invoke it first."
@@ -836,8 +864,10 @@ runs.
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
-| `agentcohort skills` | **Read-only** — detect Claude Code skills installed in user / plugin / project scope. Lists each with its description. Used by `init` (next release) to bake the skill list into agent boot directives. |
+| `agentcohort skills` | **Read-only** — detect Claude Code skills installed in user / plugin / project scope. Lists each with its description. |
 | `agentcohort skills --json` | Same data, machine-readable JSON output. |
+| `agentcohort refresh-skills` | **Mutating** — re-bake the boot-directive skill list in every installed bundled agent. Narrower than `upgrade`: only the skill region changes. Local files and user-edited bodies are skipped. |
+| `agentcohort refresh-skills --dry-run \| --yes \| --backup` | Preview / skip prompt / back up each rewritten file. |
 | `agentcohort add <name>` | **Mutating** — scaffold a new user-authored agent or command marked `_agentcohort_local: true` (so `upgrade` leaves it alone). Defaults to `agent`; use `command/<name>` for commands. |
 | `agentcohort add <name> --kind=<archetype>` | Agent archetype: `analyst` / `implementer` / `reviewer` / `gate` / `empty` (default `empty`). |
 | `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |
