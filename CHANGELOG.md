@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/Thiendekaco/agentcohort/compare/v0.9.0...v0.9.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* ship 0.9.1 — plugin skill discovery via installed_plugins.json ([#53](https://github.com/Thiendekaco/agentcohort/issues/53)) ([b5dbca4](https://github.com/Thiendekaco/agentcohort/commit/b5dbca4eddcb143a05589ebf9dd93d717d8e33fe))
+
 ## [0.9.0](https://github.com/Thiendekaco/agentcohort/compare/v0.8.0...v0.9.0) (2026-05-22)
 
 
