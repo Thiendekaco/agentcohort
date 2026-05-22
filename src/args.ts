@@ -37,6 +37,10 @@ export interface ParsedArgs {
   description: string | null;
   /** (add) Frontmatter `model:` alias (haiku | sonnet | opus). */
   model: string | null;
+  /** (export) Path to write the pack to. When null, write to stdout. */
+  out: string | null;
+  /** (export, import) Exclude `.agentcohort.json` from the pack / from import. */
+  noConfig: boolean;
   help: boolean;
   version: boolean;
   unknown: string[];
@@ -61,6 +65,7 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--remove-config': 'removeConfig',
   '--keep-claude-md': 'keepClaudeMd',
   '--override': 'override',
+  '--no-config': 'noConfig',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -72,10 +77,11 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
  * form (`--flag value`) is intentionally NOT supported — it would
  * require lookahead and risks swallowing positionals on user typos.
  */
-const VALUE_FLAGS: Record<string, 'kind' | 'description' | 'model'> = {
+const VALUE_FLAGS: Record<string, 'kind' | 'description' | 'model' | 'out'> = {
   '--kind': 'kind',
   '--description': 'description',
   '--model': 'model',
+  '--out': 'out',
 };
 
 /** Pure, deterministic argument parser. Unknown tokens are collected, not thrown. */
@@ -103,6 +109,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     kind: null,
     description: null,
     model: null,
+    out: null,
+    noConfig: false,
     help: false,
     version: false,
     unknown: [],
@@ -143,7 +151,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         parsed.command === 'diff' ||
         parsed.command === 'reset' ||
         parsed.command === 'completion' ||
-        parsed.command === 'add') &&
+        parsed.command === 'add' ||
+        parsed.command === 'import') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -246,6 +255,18 @@ ${b('COMMANDS')}
                        Pass \`--override\` to scaffold a local copy of
                        a same-named bundled file (your edits then win
                        over the bundled body).
+  export               Read-only. Bundle every local file (\`add\` /
+                       \`add --override\` output) plus \`.agentcohort.json\`
+                       into a portable JSON pack. With \`--out=<path>\`
+                       writes to that file; otherwise prints to stdout.
+                       Use \`--no-config\` to skip the config.
+  import <pack>        Mutating. Apply a pack produced by \`export\`:
+                       writes each local file under .claude/ and
+                       (unless \`--no-config\`) restores
+                       \`.agentcohort.json\`. Refuses to overwrite an
+                       existing local file without \`--force\`. Use
+                       \`--backup\` to keep the previous body when
+                       overwriting.
 
 ${b('OPTIONS')}
   --yes, -y            Non-interactive. Safe defaults: new files created;
@@ -291,9 +312,13 @@ ${b('OPTIONS')}
                        new agent / command. Defaults to a TODO line.
   --model=<tier>       (add only, agents) Model tier alias: haiku /
                        sonnet / opus. Defaults to sonnet.
-  --json               (doctor, lint, status, list, show, search, diff)
-                       Emit the report as JSON instead of human-readable
-                       text. Exit code is the same in both modes.
+  --out=<path>         (export only) Write the pack to this file instead
+                       of stdout.
+  --no-config          (export, import) Exclude .agentcohort.json from
+                       the pack / from the import.
+  --json               (doctor, lint, status, list, show, search, diff,
+                       export, import) Emit the report as JSON instead
+                       of human-readable text. Exit code is the same.
   --help, -h           Show this help.
   --version, -v        Print the version.
 
