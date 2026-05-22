@@ -173,10 +173,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (args.command === 'doctor') {
     try {
+      const cfg = loadConfig(process.cwd());
       const report = runDoctor({
         cwd: process.cwd(),
         templatesDir: getTemplatesDir(),
         skills: scanSkills({ cwd: process.cwd() }).skills,
+        affinity: cfg?.skillAffinity,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
@@ -247,11 +249,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     const scope: ListScope = (sub ?? 'all') as ListScope;
     try {
+      const cfg = loadConfig(process.cwd());
       const report = runList({
         cwd: process.cwd(),
         templatesDir: getTemplatesDir(),
         scope,
         skills: scanSkills({ cwd: process.cwd() }).skills,
+        affinity: cfg?.skillAffinity,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
@@ -427,6 +431,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         templatesDir: getTemplatesDir(),
         models,
         skills,
+        affinity: existingConfig?.skillAffinity,
         dryRun: true,
         backup: args.backup,
       });
@@ -468,6 +473,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         templatesDir: getTemplatesDir(),
         models,
         skills,
+        affinity: existingConfig?.skillAffinity,
         dryRun: false,
         backup: args.backup,
       });
@@ -806,6 +812,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         backup: args.backup,
         models,
         skills,
+        affinity: existingConfig?.skillAffinity,
       });
       const isMutating =
         preview.action.disposition === 'reset' ||
@@ -860,6 +867,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         backup: args.backup,
         models,
         skills,
+        affinity: existingConfig?.skillAffinity,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -900,6 +908,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         scope,
         models,
         skills: scanSkills({ cwd: process.cwd() }).skills,
+        affinity: existingConfig?.skillAffinity,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -989,6 +998,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         variant,
         models,
         skills: scanSkills({ cwd: process.cwd() }).skills,
+        affinity: existingConfig?.skillAffinity,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -1040,6 +1050,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         interactive,
         models,
         skills,
+        affinity: existingConfig?.skillAffinity,
         resolver: interactive
           ? (req) => upgradeResolver(req, { showDiff: args.diff })
           : undefined,
@@ -1143,6 +1154,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
     if (interactive) resolverHandle = createInteractiveResolver();
     const skills = scanSkills({ cwd }).skills;
+    // Re-load config in case `init` wrote one above (e.g. when the
+    // user supplied a new models strategy this run). We want
+    // skillAffinity from the on-disk file, not the in-memory
+    // existingConfig captured before writeConfig.
+    const cfgAfterInit = loadConfig(cwd);
     const result = await runInit({
       cwd,
       yes: args.yes,
@@ -1154,6 +1170,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       logger,
       models,
       skills,
+      affinity: cfgAfterInit?.skillAffinity,
     });
     printSummary(result);
     return 0;

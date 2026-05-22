@@ -16,6 +16,11 @@ import {
   hasSkillsRegion,
   extractSkillsRegion,
 } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 
 /**
@@ -64,6 +69,8 @@ export interface DoctorOptions {
    * matches what `init` / `upgrade` would write. Defaults to `[]`.
    */
   skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 const ROUTING_HEADING_RE = /^# Agentcohort Routing Rules[ \t]*$/gm;
@@ -76,7 +83,14 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   const sections: SectionReport[] = [];
   sections.push(checkProject(opts.cwd));
   sections.push(checkConfig(opts.cwd));
-  sections.push(checkAgents(opts.cwd, opts.templatesDir, opts.skills ?? []));
+  sections.push(
+    checkAgents(
+      opts.cwd,
+      opts.templatesDir,
+      opts.skills ?? [],
+      resolveAffinity(opts.affinity)
+    )
+  );
   sections.push(checkCommands(opts.cwd, opts.templatesDir));
   sections.push(checkClaudeMd(opts.cwd));
 
@@ -273,7 +287,8 @@ function checkConfig(cwd: string): SectionReport {
 function checkAgents(
   cwd: string,
   templatesDir: string,
-  skills: readonly Skill[]
+  skills: readonly Skill[],
+  affinity: SkillAffinity
 ): SectionReport {
   return checkTemplateGroup({
     cwd,
@@ -285,6 +300,7 @@ function checkAgents(
     // compares apples to apples.
     render: true,
     skills,
+    affinity,
   });
 }
 
@@ -296,6 +312,7 @@ function checkCommands(cwd: string, templatesDir: string): SectionReport {
     sectionName: 'Commands',
     render: false,
     skills: [],
+    affinity: {},
   });
 }
 
@@ -306,6 +323,7 @@ function checkTemplateGroup(args: {
   sectionName: string;
   render: boolean;
   skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): SectionReport {
   const checks: CheckResult[] = [];
   const installedDir = join(args.cwd, '.claude', args.group);
@@ -385,8 +403,12 @@ function checkTemplateGroup(args: {
       continue;
     }
     const bundled = readFileSync(join(templateDir, f), 'utf8');
+    const agentName = f.replace(/\.md$/, '');
+    const relevant = args.render
+      ? relevantSkills(agentName, args.skills, args.affinity)
+      : [];
     const rendered = args.render
-      ? injectSkillsList(renderAgentTemplate(bundled, userModels), args.skills)
+      ? injectSkillsList(renderAgentTemplate(bundled, userModels), relevant)
       : bundled;
     const verdict: IntegrityVerdict = compareIntegrity(installed, rendered);
     if (verdict === 'user-edited') userEdited.push(f);

@@ -5,6 +5,11 @@ import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { hasLocalMarker } from './localMarker';
 import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 import {
   backupFile,
@@ -103,6 +108,8 @@ export interface ResetOptions {
   models: ModelsConfig;
   /** Skills baked into the rewritten agent (matches install/upgrade). */
   skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
   now?: () => Date;
 }
 
@@ -164,6 +171,7 @@ export function runReset(opts: ResetOptions): ResetResult {
     backup: opts.backup,
     models: opts.models,
     skills: opts.skills ?? [],
+    affinity: resolveAffinity(opts.affinity),
     now: opts.now ?? (() => new Date()),
   });
 }
@@ -214,6 +222,7 @@ function performReset(args: {
   backup: boolean;
   models: ModelsConfig;
   skills: readonly Skill[];
+  affinity: SkillAffinity;
   now: () => Date;
 }): ResetResult {
   const subdir = args.cand.kind === 'agent' ? 'agents' : 'commands';
@@ -254,10 +263,15 @@ function performReset(args: {
       ? renderAgentTemplate(bundledRaw, args.models)
       : bundledRaw;
   // Match what `init` / `upgrade` write today: agents get the
-  // boot-directive skills region refreshed for the current environment.
+  // boot-directive skills region refreshed for the current
+  // environment, filtered per the affinity map.
+  const relevant =
+    args.cand.kind === 'agent'
+      ? relevantSkills(args.cand.name, args.skills, args.affinity)
+      : [];
   const withSkills =
     args.cand.kind === 'agent'
-      ? injectSkillsList(rendered, args.skills)
+      ? injectSkillsList(rendered, relevant)
       : rendered;
   const newText = stampTemplate(withSkills);
 

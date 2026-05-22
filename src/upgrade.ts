@@ -22,6 +22,11 @@ import {
 } from './stamp';
 import { hasLocalMarker } from './localMarker';
 import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 import type { Logger } from './logger';
 import type { ModelsConfig } from './config';
@@ -110,6 +115,8 @@ export interface UpgradeOptions {
    * (so upgrade picks up newly-installed skills). Defaults to `[]`.
    */
   skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
   resolver?: UpgradeResolver;
   now?: () => Date;
   logger?: Logger;
@@ -183,6 +190,8 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
     return path;
   };
 
+  const affinity = resolveAffinity(options.affinity);
+
   for (const entry of manifest) {
     if (entry.kind === 'regular') {
       await handleRegular(entry);
@@ -201,8 +210,14 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
     const rendered = isAgent
       ? renderAgentTemplate(rawTemplate, options.models)
       : rawTemplate;
+    const agentName = isAgent
+      ? entry.targetRelPath.replace(/^\.claude\/agents\//, '').replace(/\.md$/, '')
+      : '';
+    const relevant = isAgent
+      ? relevantSkills(agentName, options.skills ?? [], affinity)
+      : [];
     const withSkills = isAgent
-      ? injectSkillsList(rendered, options.skills ?? [])
+      ? injectSkillsList(rendered, relevant)
       : rendered;
     const bundled = stampTemplate(withSkills);
     const installed = readIfExists(entry.targetAbsPath);

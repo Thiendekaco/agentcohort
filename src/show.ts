@@ -5,6 +5,11 @@ import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity, IntegrityVerdict } from './stamp';
 import { hasLocalMarker } from './localMarker';
 import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 
 /**
@@ -67,6 +72,8 @@ export interface ShowOptions {
   models: ModelsConfig;
   /** Skills baked into the bundled body (matches install/upgrade output). */
   skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 export function runShow(opts: ShowOptions): ShowResult {
@@ -75,6 +82,7 @@ export function runShow(opts: ShowOptions): ShowResult {
     restrictTo !== undefined ? [restrictTo] : ['agent', 'command'];
 
   const matches: ShowMatch[] = [];
+  const affinity = resolveAffinity(opts.affinity);
   for (const kind of lookFor) {
     const m = lookupOne({
       kind,
@@ -84,6 +92,7 @@ export function runShow(opts: ShowOptions): ShowResult {
       variant: opts.variant,
       models: opts.models,
       skills: opts.skills ?? [],
+      affinity,
     });
     if (m !== null) matches.push(m);
   }
@@ -123,6 +132,7 @@ function lookupOne(args: {
   variant: ShowVariant;
   models: ModelsConfig;
   skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): ShowMatch | null {
   const subdir = args.kind === 'agent' ? 'agents' : 'commands';
   // Strip a `.md` extension the user may have included so both
@@ -156,7 +166,8 @@ function lookupOne(args: {
     let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
     if (args.kind === 'agent') {
-      rendered = injectSkillsList(rendered, args.skills);
+      const relevant = relevantSkills(baseName, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
     }
     return {
       kind: args.kind,
@@ -181,9 +192,10 @@ function lookupOne(args: {
       const bundledRaw = readFileSync(bundledPath, 'utf8');
       let bundledRendered: string;
       if (args.kind === 'agent') {
+        const relevant = relevantSkills(baseName, args.skills, args.affinity);
         bundledRendered = injectSkillsList(
           renderAgentTemplate(bundledRaw, args.models),
-          args.skills
+          relevant
         );
       } else {
         bundledRendered = bundledRaw;
@@ -211,7 +223,8 @@ function lookupOne(args: {
     let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
     if (args.kind === 'agent') {
-      rendered = injectSkillsList(rendered, args.skills);
+      const relevant = relevantSkills(baseName, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
     }
     return {
       kind: args.kind,

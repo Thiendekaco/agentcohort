@@ -545,6 +545,37 @@ skills propagate next time you upgrade). `reset` on a single agent
 re-bakes the current list too. Local-override agents (created via
 `add --override`) are skipped — they own their content.
 
+**Each agent only sees skills relevant to its role** — this is the
+**skill affinity** layer. The hardcoded `DEFAULT_AFFINITY` map (in
+`src/skillAffinity.ts`) wires every known skill (`superpowers:*`,
+plugin skills, common community skills) to a curated list of bundled
+agents:
+
+- `superpowers:systematic-debugging` → bug-hunter, root-cause-analyst, reproduction-engineer
+- `superpowers:test-driven-development` → test-verifier, feature-implementer
+- `superpowers:writing-plans` → solution-architect, feature-planner
+- `review` → final-reviewer, perf-reviewer
+- `caveman-commit` → `[]` (commit-message tool, not subagent-appropriate)
+- ... (full map covers 40+ known skills)
+
+Unknown skills (not in the map) default to **no agents** — safer
+than the noisy "show everywhere" alternative. To wire a custom skill
+to specific agents, add it to `.agentcohort.json`:
+
+```json
+{
+  "version": 1,
+  "models": { ... },
+  "skillAffinity": {
+    "my-internal-skill": ["bug-hunter", "feature-implementer"],
+    "superpowers:systematic-debugging": []
+  }
+}
+```
+
+User entries **replace** defaults for that skill (so an empty array
+mutes a default-mapped skill).
+
 **To refresh just the skill list (without doing a full `upgrade`)**,
 use `agentcohort refresh-skills`:
 

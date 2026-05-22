@@ -350,9 +350,15 @@ Body.
 });
 
 describe('runDoctor — skill-drift detection (PR3)', () => {
+  const AFFINITY_ALL_AGENTS = {
+    'skill-original': ['bug-hunter'],
+    'skill-NEW': ['bug-hunter'],
+    unchanged: ['bug-hunter'],
+  };
+
   it('warns about stale skill lists with a refresh-skills hint', async () => {
     const cwd = project();
-    // Install with two skills baked in.
+    // Install with one skill baked in (wired to bug-hunter via affinity).
     await runInit({
       cwd,
       yes: true,
@@ -373,6 +379,7 @@ describe('runDoctor — skill-drift detection (PR3)', () => {
           hasExtras: false,
         },
       ],
+      affinity: AFFINITY_ALL_AGENTS,
     });
     // Run doctor with a DIFFERENT skill list (simulating user installed a new skill).
     const report = runDoctor({
@@ -396,6 +403,7 @@ describe('runDoctor — skill-drift detection (PR3)', () => {
           hasExtras: false,
         },
       ],
+      affinity: AFFINITY_ALL_AGENTS,
     });
     const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
     const skillsStale = agentsSection.checks.find((c) => c.id === 'agents.skills-stale');
@@ -429,11 +437,13 @@ describe('runDoctor — skill-drift detection (PR3)', () => {
       templatesDir: TEMPLATES,
       models: { ...DEFAULT_MODELS },
       skills: sameSkills,
+      affinity: AFFINITY_ALL_AGENTS,
     });
     const report = runDoctor({
       cwd,
       templatesDir: TEMPLATES,
       skills: sameSkills,
+      affinity: AFFINITY_ALL_AGENTS,
     });
     const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
     const skillsStale = agentsSection.checks.find((c) => c.id === 'agents.skills-stale');

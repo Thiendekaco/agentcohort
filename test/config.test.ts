@@ -266,3 +266,102 @@ describe('gates — writeConfig serialization', () => {
     expect(r).toBeLessThan(e);
   });
 });
+
+describe('skillAffinity — validateConfig', () => {
+  it('accepts an object mapping skill names to agent-name arrays', () => {
+    const cfg = validateConfig({
+      version: 1,
+      models: { premium: 'a', mid: 'b', cheap: 'c' },
+      skillAffinity: {
+        'my-skill': ['bug-hunter', 'feature-implementer'],
+        'another-skill': [],
+      },
+    });
+    expect(cfg.skillAffinity).toEqual({
+      'my-skill': ['bug-hunter', 'feature-implementer'],
+      'another-skill': [],
+    });
+  });
+
+  it('treats absent skillAffinity as undefined (no field)', () => {
+    const cfg = validateConfig({
+      version: 1,
+      models: { premium: 'a', mid: 'b', cheap: 'c' },
+    });
+    expect(cfg.skillAffinity).toBeUndefined();
+  });
+
+  it('rejects non-object skillAffinity (array)', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        models: { premium: 'a', mid: 'b', cheap: 'c' },
+        skillAffinity: [],
+      })
+    ).toThrow(/skillAffinity must be an object/);
+  });
+
+  it('rejects when an entry is not an array', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        models: { premium: 'a', mid: 'b', cheap: 'c' },
+        skillAffinity: { 'my-skill': 'bug-hunter' },
+      })
+    ).toThrow(/must be an array of agent names/);
+  });
+
+  it('rejects when an entry contains a non-string agent name', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        models: { premium: 'a', mid: 'b', cheap: 'c' },
+        skillAffinity: { 'my-skill': ['bug-hunter', 123] },
+      })
+    ).toThrow(/must be a non-empty string/);
+  });
+});
+
+describe('skillAffinity — writeConfig serialization', () => {
+  it('emits skillAffinity with sorted keys for deterministic output', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'af-cfg-aff-'));
+    try {
+      const cfg = validateConfig({
+        version: 1,
+        models: { premium: 'a', mid: 'b', cheap: 'c' },
+        skillAffinity: {
+          'z-skill': ['bug-hunter'],
+          'a-skill': ['feature-implementer'],
+        },
+      });
+      writeConfig(tmpDir, cfg);
+      const written = readFileSync(join(tmpDir, '.agentcohort.json'), 'utf8');
+      const aIdx = written.indexOf('"a-skill"');
+      const zIdx = written.indexOf('"z-skill"');
+      expect(aIdx).toBeGreaterThan(0);
+      expect(zIdx).toBeGreaterThan(aIdx);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('round-trips through write → load', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'af-cfg-aff-'));
+    try {
+      const cfg = validateConfig({
+        version: 1,
+        models: { premium: 'a', mid: 'b', cheap: 'c' },
+        skillAffinity: {
+          'custom-skill': ['bug-fixer'],
+        },
+      });
+      writeConfig(tmpDir, cfg);
+      const loaded = loadConfig(tmpDir);
+      expect(loaded?.skillAffinity).toEqual({
+        'custom-skill': ['bug-fixer'],
+      });
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -14,6 +14,11 @@ import {
   hasSkillsRegion,
   extractSkillsRegion,
 } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
 import type { Skill } from './skills';
 
 /**
@@ -71,6 +76,8 @@ export interface RefreshOptions {
   templatesDir: string;
   models: ModelsConfig;
   skills: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
   dryRun: boolean;
   /** Back up each rewritten file before overwriting. */
   backup: boolean;
@@ -79,6 +86,7 @@ export interface RefreshOptions {
 
 export function runRefreshSkills(opts: RefreshOptions): RefreshResult {
   const now = opts.now ?? (() => new Date());
+  const affinity = resolveAffinity(opts.affinity);
   const agentsDir = join(opts.cwd, '.claude', 'agents');
   const bundledDir = join(opts.templatesDir, 'agents');
   const entries: RefreshEntry[] = [];
@@ -136,10 +144,12 @@ export function runRefreshSkills(opts: RefreshOptions): RefreshResult {
     }
 
     // Build the canonical "what init would write right now" for this
-    // file: render → inject current skills → stamp.
+    // file: render → inject affinity-filtered current skills → stamp.
+    const agentName = f.replace(/\.md$/, '');
     const bundledRaw = readFileSync(bundledPath, 'utf8');
     const rendered = renderAgentTemplate(bundledRaw, opts.models);
-    const withSkills = injectSkillsList(rendered, opts.skills);
+    const relevant = relevantSkills(agentName, opts.skills, affinity);
+    const withSkills = injectSkillsList(rendered, relevant);
     const fresh = stampTemplate(withSkills);
 
     if (fresh === installed) {

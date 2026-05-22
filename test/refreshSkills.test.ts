@@ -12,6 +12,32 @@ import { runRefreshSkills } from '../src/refreshSkills';
 import { runInit } from '../src/installer';
 import { DEFAULT_MODELS } from '../src/defaults';
 import type { Skill } from '../src/skills';
+import type { SkillAffinity } from '../src/skillAffinity';
+
+const BUNDLED_AGENTS = [
+  'bug-fixer',
+  'bug-hunter',
+  'dispatcher',
+  'expert-council',
+  'feature-implementer',
+  'feature-planner',
+  'final-reviewer',
+  'perf-optimizer',
+  'perf-reviewer',
+  'performance-hunter',
+  'regression-guard',
+  'repo-scout',
+  'reproduction-engineer',
+  'root-cause-analyst',
+  'solution-architect',
+  'test-verifier',
+];
+
+function affinityForAll(skillNames: string[]): SkillAffinity {
+  const out: SkillAffinity = {};
+  for (const s of skillNames) out[s] = BUNDLED_AGENTS;
+  return out;
+}
 
 const TEMPLATES = resolve(process.cwd(), 'src', 'templates');
 const tmps: string[] = [];
@@ -37,7 +63,11 @@ function makeSkill(name: string, description = 'test'): Skill {
   };
 }
 
-async function installWithSkills(cwd: string, skills: Skill[]): Promise<void> {
+async function installWithSkills(
+  cwd: string,
+  skills: Skill[],
+  affinity?: SkillAffinity
+): Promise<void> {
   await runInit({
     cwd,
     yes: true,
@@ -49,6 +79,7 @@ async function installWithSkills(cwd: string, skills: Skill[]): Promise<void> {
     templatesDir: TEMPLATES,
     models: { ...DEFAULT_MODELS },
     skills,
+    affinity: affinity ?? affinityForAll(skills.map((s) => s.name)),
   });
 }
 
@@ -62,6 +93,7 @@ describe('runRefreshSkills — noop / updated dispositions', () => {
       templatesDir: TEMPLATES,
       models: { ...DEFAULT_MODELS },
       skills,
+      affinity: affinityForAll(skills.map((s) => s.name)),
       dryRun: false,
       backup: false,
     });
@@ -81,6 +113,7 @@ describe('runRefreshSkills — noop / updated dispositions', () => {
       templatesDir: TEMPLATES,
       models: { ...DEFAULT_MODELS },
       skills: [makeSkill('skill-a'), makeSkill('skill-b', 'B description')],
+      affinity: affinityForAll(['skill-a', 'skill-b']),
       dryRun: false,
       backup: false,
     });
@@ -105,6 +138,7 @@ describe('runRefreshSkills — noop / updated dispositions', () => {
       templatesDir: TEMPLATES,
       models: { ...DEFAULT_MODELS },
       skills: [makeSkill('one'), makeSkill('two')],
+      affinity: affinityForAll(['one', 'two']),
       dryRun: false,
       backup: true,
       now: () => new Date(2026, 5, 1, 9, 0, 0),
@@ -206,6 +240,7 @@ describe('runRefreshSkills — dryRun', () => {
       templatesDir: TEMPLATES,
       models: { ...DEFAULT_MODELS },
       skills: [makeSkill('foo'), makeSkill('new-skill')],
+      affinity: affinityForAll(['foo', 'new-skill']),
       dryRun: true,
       backup: false,
     });
