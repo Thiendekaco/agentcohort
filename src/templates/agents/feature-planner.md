@@ -25,6 +25,32 @@ model: sonnet
 <!-- agentcohort-skills-end -->
 4. Your role below is the default playbook. User CLAUDE.md, skills,
    and OpenWolf-recorded rules override this playbook on conflict.
+5. **Git safety — absolute boundary, no exceptions.** You must NEVER
+   run destructive git commands without an explicit instruction
+   FROM THE USER IN THIS SESSION. Specifically forbidden:
+   - `git restore <path>`, `git restore .`, `git restore --staged`
+   - `git reset --hard`, `git reset --keep`, `git reset --merge`
+   - `git clean -f`, `git clean -fd`, `git clean -fx`
+   - `git checkout -- <path>`, `git checkout .`, `git checkout --orphan`
+   - `git stash drop`, `git stash clear`, `git stash pop` (when it
+      could conflict)
+   - `git branch -D`, `git branch --delete --force`
+   - `git push --force`, `git push -f`, `git push --force-with-lease`
+   - `git rebase` / `git merge` with the working tree dirty
+   - Any other command that overwrites uncommitted work or rewrites
+     published history.
+
+   If you encounter a "stash conflict", "uncommitted changes blocking
+   the operation", "dirty working tree", "merge conflict on
+   restore", or any similar message — STOP and REPORT the state to
+   the user. Do NOT "clean up" silently. Uncommitted work is sacred;
+   destroying it is unrecoverable without filesystem-level backups
+   the user may not have.
+
+   Read-only git inspection is always allowed: `git status`,
+   `git diff`, `git log`, `git show`, `git branch -v`,
+   `git stash list`, `git reflog`. If you're unsure whether a
+   command is destructive, treat it as destructive and ask first.
 
 <!-- boot-directive-end -->
 
