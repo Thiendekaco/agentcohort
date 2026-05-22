@@ -308,3 +308,65 @@ describe('runDiff — JSON shape', () => {
     expect(typeof round.files[0].diff).toBe('string');
   });
 });
+
+describe('runDiff — overlay-aware (PR2)', () => {
+  it('reports local-override with status="local-override" and a real diff', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    writeFileSync(
+      overridePath,
+      `---
+name: bug-hunter
+description: My override
+_agentcohort_local: true
+---
+
+# Role
+
+Customized.
+`,
+      'utf8'
+    );
+    const result = runDiff({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'bug-hunter',
+      scope: 'all',
+      models: { ...DEFAULT_MODELS },
+    });
+    expect(result.exitCode).toBe(1);
+    const entry = result.files.find((f) => f.name === 'bug-hunter')!;
+    expect(entry.status).toBe('local-override');
+    expect(entry.diff).not.toBe('');
+    expect(entry.diff).toContain('local override');
+  });
+
+  it('reports local-new with status="local" and an empty diff', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const localPath = join(cwd, '.claude', 'agents', 'my-custom.md');
+    writeFileSync(
+      localPath,
+      `---
+name: my-custom
+description: Custom
+_agentcohort_local: true
+---
+
+Body.
+`,
+      'utf8'
+    );
+    const result = runDiff({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'my-custom',
+      scope: 'all',
+      models: { ...DEFAULT_MODELS },
+    });
+    const entry = result.files.find((f) => f.name === 'my-custom')!;
+    expect(entry.status).toBe('local');
+    expect(entry.diff).toBe('');
+  });
+});

@@ -259,3 +259,54 @@ describe('runUninstall — JSON shape', () => {
     expect(Array.isArray(round.entries)).toBe(true);
   });
 });
+
+describe('runUninstall — overlay-aware (PR2)', () => {
+  it('keeps a local-override file (same name as bundled, has marker) instead of removing it', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    const body = `---
+name: bug-hunter
+description: My override
+_agentcohort_local: true
+---
+
+# Role
+
+Local.
+`;
+    writeFileSync(overridePath, body, 'utf8');
+    const result = runUninstall({
+      cwd,
+      templatesDir: TEMPLATES,
+      dryRun: false,
+      backup: false,
+      removeClaudeSection: true,
+      removeConfig: false,
+      now: () => new Date(2026, 4, 21, 12, 0, 0),
+    });
+    // File still there with the original local body.
+    expect(existsSync(overridePath)).toBe(true);
+    expect(readFileSync(overridePath, 'utf8')).toBe(body);
+    // Recorded as kept-user-file.
+    const entry = result.entries.find((e) => e.path.endsWith('bug-hunter.md'))!;
+    expect(entry.kind).toBe('kept-user-file');
+  });
+
+  it('removes non-local bundled files (regression: marker is the only protection)', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const bundledPath = join(cwd, '.claude', 'agents', 'dispatcher.md');
+    expect(existsSync(bundledPath)).toBe(true);
+    runUninstall({
+      cwd,
+      templatesDir: TEMPLATES,
+      dryRun: false,
+      backup: false,
+      removeClaudeSection: true,
+      removeConfig: false,
+      now: () => new Date(2026, 4, 21, 12, 0, 0),
+    });
+    expect(existsSync(bundledPath)).toBe(false);
+  });
+});

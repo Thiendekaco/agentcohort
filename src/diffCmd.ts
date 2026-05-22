@@ -4,6 +4,7 @@ import type { ModelsConfig } from './config';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { unifiedDiff } from './textDiff';
+import { hasLocalMarker } from './localMarker';
 
 /**
  * `agentcohort diff` — read-only file-level diff between installed
@@ -29,7 +30,9 @@ export type DiffStatus =
   | 'user-edited' // installed body diverges from its stamp
   | 'unstamped' // installed has no stamp (pre-0.4.0)
   | 'missing' // bundled but not installed locally
-  | 'extra'; // installed but not part of the bundled set
+  | 'extra' // installed, no marker, no bundled equivalent
+  | 'local' // installed user-authored, no bundled equivalent
+  | 'local-override'; // installed user-authored override of a bundled file
 
 export interface DiffFileEntry {
   kind: DiffKind;
@@ -214,20 +217,31 @@ function buildEntry(args: {
     ? readFileSync(installedPath, 'utf8')
     : '';
 
+  const isLocal = args.installedExists && hasLocalMarker(installed);
   let status: DiffStatus;
   if (!args.installedExists && args.bundledExists) status = 'missing';
-  else if (args.installedExists && !args.bundledExists) status = 'extra';
-  else {
+  else if (args.installedExists && !args.bundledExists) {
+    status = isLocal ? 'local' : 'extra';
+  } else if (isLocal) {
+    // Local override of a bundled file — diff is still meaningful so the
+    // user can see what their override changed, but it is not "drift".
+    status = 'local-override';
+  } else {
     const verdict = compareIntegrity(installed, bundledRenderedStamped);
     status = verdict; // 'unchanged' | 'outdated' | 'user-edited' | 'unstamped'
   }
 
   let diff = '';
-  if (status === 'unchanged' || status === 'extra') {
+  if (status === 'unchanged' || status === 'extra' || status === 'local') {
     diff = '';
   } else if (status === 'missing') {
     diff = unifiedDiff('', bundledRenderedStamped, {
       oldLabel: '(not installed)',
+      newLabel: `bundled/${args.filename}`,
+    });
+  } else if (status === 'local-override') {
+    diff = unifiedDiff(installed, bundledRenderedStamped, {
+      oldLabel: `installed/${args.filename} (local override)`,
       newLabel: `bundled/${args.filename}`,
     });
   } else {

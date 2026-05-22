@@ -1083,13 +1083,15 @@ function formatListReport(report: ListReport): string {
   return out.join('\n') + '\n';
 }
 
-const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray' | 'cyan'> = {
   installed: 'green',
   outdated: 'yellow',
   'user-edited': 'yellow',
   unstamped: 'yellow',
   missing: 'red',
   extra: 'gray',
+  local: 'cyan',
+  'local-override': 'cyan',
 };
 
 function statusBadge(status: ListEntryStatus): string {
@@ -1099,7 +1101,7 @@ function statusBadge(status: ListEntryStatus): string {
 function formatAgentsBlock(entries: ListAgentEntry[]): string {
   const out: string[] = [];
   const installed = entries.filter((e) => e.status === 'installed').length;
-  const total = entries.filter((e) => e.status !== 'extra').length;
+  const total = entries.filter((e) => e.status !== 'extra' && e.status !== 'local').length;
   out.push(
     paint(`Agents `, 'bold') +
       paint(`(${installed}/${total} installed)`, 'gray')
@@ -1127,7 +1129,7 @@ function formatAgentsBlock(entries: ListAgentEntry[]): string {
 function formatCommandsBlock(entries: ListCommandEntry[]): string {
   const out: string[] = [];
   const installed = entries.filter((e) => e.status === 'installed').length;
-  const total = entries.filter((e) => e.status !== 'extra').length;
+  const total = entries.filter((e) => e.status !== 'extra' && e.status !== 'local').length;
   out.push(
     paint(`Commands `, 'bold') +
       paint(`(${installed}/${total} installed)`, 'gray')
@@ -1218,6 +1220,10 @@ function formatShowMatch(m: ShowMatch): string {
       outdated: paint('integrity: outdated (bundled has moved on)', 'yellow'),
       'user-edited': paint('integrity: user-edited (body diverges from stamp)', 'yellow'),
       unstamped: paint('integrity: unstamped (pre-0.4.0 install)', 'yellow'),
+      local: paint(
+        'integrity: local (user-authored — `agentcohort upgrade` leaves it alone)',
+        'cyan'
+      ),
     }[m.status];
     out.push(statusLabel);
   }
@@ -1336,6 +1342,7 @@ const RESET_DISP_COLOR: Record<ResetDisposition, 'green' | 'yellow' | 'red'> = {
   reset: 'yellow',
   installed: 'green',
   'refused-extra': 'red',
+  'refused-local-new': 'red',
   'refused-not-found': 'red',
   'refused-ambiguous': 'red',
 };
@@ -1351,7 +1358,18 @@ function formatResetResult(result: ResetResult): string {
       out.push(paint(`  Already matches the bundled body — nothing to do.`, 'gray'));
       break;
     case 'reset':
-      out.push(paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray'));
+      if (a.preStatus === 'local-override') {
+        out.push(
+          paint(
+            `  Removed local override and restored bundled body: ${a.installedPath}`,
+            'gray'
+          )
+        );
+      } else {
+        out.push(
+          paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray')
+        );
+      }
       if (a.backupPath) {
         out.push(paint(`  Backup: ${a.backupPath}`, 'gray'));
       }
@@ -1369,6 +1387,20 @@ function formatResetResult(result: ResetResult): string {
       out.push(
         paint(
           `    To remove a user-authored file, delete it manually from ${a.installedPath}.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-local-new':
+      out.push(
+        paint(
+          `  ✗ This file carries \`_agentcohort_local: true\` — it was added by you (or with \`agentcohort add\`) and has no bundled equivalent to revert to.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    To remove it, use \`agentcohort uninstall\` (which keeps user files by default — you'd need to delete this file manually) or delete ${a.installedPath} directly.`,
           'gray'
         )
       );
@@ -1401,7 +1433,16 @@ function formatResetPreview(preview: ResetResult): string {
       '  ' +
       (a.kind ? `${a.kind}/${a.name}` : a.name)
   );
-  out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  if (a.preStatus === 'local-override') {
+    out.push(
+      paint(
+        `  This is a LOCAL OVERRIDE — your customization will be dropped and replaced by the bundled body.`,
+        'yellow'
+      )
+    );
+  } else {
+    out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  }
   out.push(paint(`  Target: ${a.installedPath}`, 'gray'));
   if (preview.action.disposition === 'reset' && a.oldText !== '') {
     const diff = unifiedDiff(a.oldText, a.newText, {
@@ -1537,13 +1578,15 @@ function formatAddPreview(preview: AddResult): string {
   return out.join('\n') + '\n';
 }
 
-const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray' | 'cyan'> = {
   unchanged: 'green',
   outdated: 'yellow',
   'user-edited': 'yellow',
   unstamped: 'yellow',
   missing: 'red',
   extra: 'gray',
+  local: 'cyan',
+  'local-override': 'cyan',
 };
 
 function formatDiffResult(result: DiffResult): string {
@@ -1590,6 +1633,30 @@ function formatDiffEntry(f: DiffFileEntry): string {
         `  (installed locally but not part of the bundled set — nothing to diff against)`,
         'gray'
       ) +
+      '\n'
+    );
+  }
+  if (f.status === 'local') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  (user-authored file with no bundled equivalent — nothing to diff against)`,
+        'gray'
+      ) +
+      '\n'
+    );
+  }
+  if (f.status === 'local-override') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  This is a local override — the diff below shows what your customization changed from the bundled body.`,
+        'gray'
+      ) +
+      '\n' +
+      colorizeDiff(f.diff) +
       '\n'
     );
   }

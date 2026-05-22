@@ -276,3 +276,51 @@ describe('runShow — JSON shape', () => {
     expect(round.exitCode).toBe(0);
   });
 });
+
+describe('runShow — overlay-aware (PR2)', () => {
+  it('reports status="local" for a file carrying the marker', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const path = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    writeFileSync(
+      path,
+      `---
+name: bug-hunter
+description: My override
+_agentcohort_local: true
+---
+
+# Role
+
+Local.
+`,
+      'utf8'
+    );
+    const result = runShow({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'bug-hunter',
+      variant: 'default',
+      models: { ...DEFAULT_MODELS },
+    });
+    const m = result.matches.find((mm) => mm.kind === 'agent')!;
+    expect(m.source).toBe('installed');
+    expect(m.status).toBe('local');
+    expect(m.isLocal).toBe(true);
+  });
+
+  it('does not set isLocal for a bundled file without the marker', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const result = runShow({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'bug-hunter',
+      variant: 'default',
+      models: { ...DEFAULT_MODELS },
+    });
+    const m = result.matches.find((mm) => mm.kind === 'agent')!;
+    expect(m.isLocal).toBeUndefined();
+    expect(m.status).toBe('unchanged');
+  });
+});

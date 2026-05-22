@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { ModelsConfig } from './config';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity, IntegrityVerdict } from './stamp';
+import { hasLocalMarker } from './localMarker';
 
 /**
  * `agentcohort show <name>` — print the body of one installed or
@@ -23,10 +24,17 @@ export interface ShowMatch {
   kind: ShowKind;
   name: string;
   source: ShowSource;
-  /** Integrity verdict when source === 'installed' AND a bundled body exists. */
-  status?: IntegrityVerdict | 'no-bundled';
+  /**
+   * Integrity verdict when source === 'installed'. `'no-bundled'` means
+   * no bundled file shares this name; `'local'` means the installed
+   * file carries the `_agentcohort_local: true` marker — integrity
+   * comparison is intentionally skipped.
+   */
+  status?: IntegrityVerdict | 'no-bundled' | 'local';
   /** True when default fallback was used (no installed file, bundled shown). */
   fallback: boolean;
+  /** True when the installed file carries the local marker. */
+  isLocal?: boolean;
   /** Absolute path on disk where `content` came from. */
   path: string;
   /** File body to print. */
@@ -154,8 +162,13 @@ function lookupOne(args: {
   // Default: prefer installed; fall back to bundled-rendered with a banner.
   if (installedExists) {
     const installed = readFileSync(installedPath, 'utf8');
-    let status: IntegrityVerdict | 'no-bundled';
-    if (bundledExists) {
+    const isLocal = hasLocalMarker(installed);
+    let status: IntegrityVerdict | 'no-bundled' | 'local';
+    if (isLocal) {
+      // Local files own their content — skip integrity comparison even
+      // when a same-named bundled exists (the user opted out).
+      status = 'local';
+    } else if (bundledExists) {
       const bundledRaw = readFileSync(bundledPath, 'utf8');
       const bundled = stampTemplate(
         args.kind === 'agent'
@@ -166,7 +179,7 @@ function lookupOne(args: {
     } else {
       status = 'no-bundled';
     }
-    return {
+    const match: ShowMatch = {
       kind: args.kind,
       name: baseName,
       source: 'installed',
@@ -175,6 +188,8 @@ function lookupOne(args: {
       path: installedPath,
       content: installed,
     };
+    if (isLocal) match.isLocal = true;
+    return match;
   }
 
   if (bundledExists) {

@@ -7,6 +7,7 @@ import {
   backupPathFor,
   writeFileEnsuringDir,
 } from './fileOps';
+import { hasLocalMarker } from './localMarker';
 
 /**
  * `agentcohort uninstall` — remove the bundled-set files (agents +
@@ -189,6 +190,14 @@ function planAndApplyFiles(args: {
   for (const f of installedFiles.sort()) {
     const path = join(installedDir, f);
     if (!bundledSet.has(f)) {
+      entries.push({ path, kind: 'kept-user-file' });
+      continue;
+    }
+    // Same name as a bundled file BUT carries the local marker → it's
+    // the user's override (created by `agentcohort add --override`).
+    // Never delete user-authored content — this is the contract.
+    const body = readFileSync(path, 'utf8');
+    if (hasLocalMarker(body)) {
       entries.push({ path, kind: 'kept-user-file' });
       continue;
     }

@@ -279,3 +279,89 @@ describe('runList — JSON-safe output shape', () => {
     expect(Array.isArray(parsed.gates)).toBe(true);
   });
 });
+
+describe('runList — overlay-aware (PR2)', () => {
+  it('reports a local-new file with status="local" (no bundled equivalent)', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const localPath = join(cwd, '.claude', 'agents', 'my-custom.md');
+    writeFileSync(
+      localPath,
+      `---
+name: my-custom
+description: Custom local agent
+tools: Read
+model: sonnet
+_agentcohort_local: true
+---
+
+# Role
+
+Custom.
+`,
+      'utf8'
+    );
+    const report = runList({ cwd, templatesDir: TEMPLATES, scope: 'agents' });
+    const e = report.agents!.find((a) => a.name === 'my-custom')!;
+    expect(e).toBeDefined();
+    expect(e.status).toBe('local');
+  });
+
+  it('reports a local-override (same name as bundled, has marker) with status="local-override"', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    writeFileSync(
+      overridePath,
+      `---
+name: bug-hunter
+description: My customized bug hunter
+tools: Read
+model: opus
+_agentcohort_local: true
+---
+
+# Role
+
+Customized.
+`,
+      'utf8'
+    );
+    const report = runList({ cwd, templatesDir: TEMPLATES, scope: 'agents' });
+    const e = report.agents!.find((a) => a.name === 'bug-hunter')!;
+    expect(e.status).toBe('local-override');
+  });
+
+  it('a file with no marker and no bundled equivalent still shows as "extra"', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const extraPath = join(cwd, '.claude', 'agents', 'random-extra.md');
+    writeFileSync(extraPath, '---\nname: random-extra\n---\n\nNo marker here.\n', 'utf8');
+    const report = runList({ cwd, templatesDir: TEMPLATES, scope: 'agents' });
+    const e = report.agents!.find((a) => a.name === 'random-extra')!;
+    expect(e.status).toBe('extra');
+  });
+
+  it('local-override commands surface as "local-override" too', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'commands', 'auto-flow.md');
+    writeFileSync(
+      overridePath,
+      `---
+name: auto-flow
+description: My customized auto-flow
+_agentcohort_local: true
+---
+
+# /auto-flow
+
+Customized.
+`,
+      'utf8'
+    );
+    const report = runList({ cwd, templatesDir: TEMPLATES, scope: 'commands' });
+    const e = report.commands!.find((c) => c.name === 'auto-flow')!;
+    expect(e.status).toBe('local-override');
+  });
+});
