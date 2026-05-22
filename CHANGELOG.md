@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/Thiendekaco/agentcohort/compare/v0.8.0...v0.9.0) (2026-05-22)
+
+
+### Features
+
+* ship 0.9.0 — Theme B (Skills integration) + Git safety hardening ([#50](https://github.com/Thiendekaco/agentcohort/issues/50)) ([1e21ac8](https://github.com/Thiendekaco/agentcohort/commit/1e21ac8198773ca89fc269be882e1eac12f516c1))
+
 ## [0.8.0](https://github.com/Thiendekaco/agentcohort/compare/v0.7.0...v0.8.0) (2026-05-22)
 
 
