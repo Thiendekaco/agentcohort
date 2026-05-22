@@ -65,7 +65,6 @@ export interface ScanOptions {
 export function scanSkills(opts: ScanOptions): SkillsScanResult {
   const home = opts.homeDir ?? homedir();
   const userRoot = join(home, '.claude', 'skills');
-  const pluginsRoot = join(home, '.claude', 'plugins');
   const projectRoot = join(opts.cwd, '.claude', 'skills');
 
   const searchedRoots: SkillsScanResult['searchedRoots'] = [];
@@ -80,13 +79,44 @@ export function scanSkills(opts: ScanOptions): SkillsScanResult {
     invalidCount += invalid;
   }
 
-  // Plugin-scope. Each plugin dir may have its own `skills/` subdir.
+  // Plugin-scope — read installed_plugins.json (Claude Code's
+  // source-of-truth for installed plugins) to discover the actual
+  // install path of each plugin, then walk `<installPath>/skills/`.
+  //
+  // The legacy fallback (`~/.claude/plugins/<name>/skills/`) is also
+  // tried for compatibility with older / hand-rolled installs.
+  const installedPlugins = readInstalledPluginsJson(home);
+  for (const entry of installedPlugins) {
+    const pluginSkillsDir = join(entry.installPath, 'skills');
+    if (!isDir(pluginSkillsDir)) continue;
+    searchedRoots.push({ scope: 'plugin', root: pluginSkillsDir });
+    const { found, invalid } = scanSkillDir(
+      pluginSkillsDir,
+      'plugin',
+      entry.pluginName
+    );
+    skills.push(...found);
+    invalidCount += invalid;
+  }
+
+  // Legacy fallback for older / hand-rolled plugin layouts:
+  // `~/.claude/plugins/<plugin>/skills/<name>/SKILL.md`. Skipped when
+  // the plugin name has already been registered via installed_plugins.json.
+  const pluginsRoot = join(home, '.claude', 'plugins');
   if (isDir(pluginsRoot)) {
+    const alreadyRegistered = new Set(
+      installedPlugins.map((p) => p.pluginName)
+    );
     for (const pluginName of safeReaddir(pluginsRoot)) {
+      if (alreadyRegistered.has(pluginName)) continue;
       const pluginSkillsDir = join(pluginsRoot, pluginName, 'skills');
       if (!isDir(pluginSkillsDir)) continue;
       searchedRoots.push({ scope: 'plugin', root: pluginSkillsDir });
-      const { found, invalid } = scanSkillDir(pluginSkillsDir, 'plugin', pluginName);
+      const { found, invalid } = scanSkillDir(
+        pluginSkillsDir,
+        'plugin',
+        pluginName
+      );
       skills.push(...found);
       invalidCount += invalid;
     }
@@ -102,6 +132,80 @@ export function scanSkills(opts: ScanOptions): SkillsScanResult {
 
   skills.sort((a, b) => a.name.localeCompare(b.name));
   return { skills, searchedRoots, invalidCount };
+}
+
+interface InstalledPluginEntry {
+  /** Plugin name (e.g. "superpowers"), parsed from the JSON key "<name>@<marketplace>". */
+  pluginName: string;
+  /** Absolute path to the install root (contains `skills/`, `agents/`, etc.). */
+  installPath: string;
+}
+
+/**
+ * Read `~/.claude/plugins/installed_plugins.json` — Claude Code's
+ * registry of installed plugins. Format (v2):
+ *
+ *   {
+ *     "version": 2,
+ *     "plugins": {
+ *       "<name>@<marketplace>": [
+ *         {
+ *           "scope": "user",
+ *           "installPath": "C:\\Users\\...\\plugins\\cache\\...\\<plugin>\\<version>",
+ *           ...
+ *         }
+ *       ]
+ *     }
+ *   }
+ *
+ * Returns the latest installation per plugin. Tolerant of missing /
+ * malformed JSON — returns an empty array in that case.
+ */
+function readInstalledPluginsJson(home: string): InstalledPluginEntry[] {
+  const path = join(home, '.claude', 'plugins', 'installed_plugins.json');
+  if (!existsSync(path)) return [];
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return [];
+  }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  const obj = raw as Record<string, unknown>;
+  const plugins = obj.plugins;
+  if (plugins === null || typeof plugins !== 'object' || Array.isArray(plugins)) {
+    return [];
+  }
+  const out: InstalledPluginEntry[] = [];
+  for (const key of Object.keys(plugins as Record<string, unknown>)) {
+    const installs = (plugins as Record<string, unknown>)[key];
+    if (!Array.isArray(installs) || installs.length === 0) continue;
+    // Pluck the latest by `lastUpdated` when available; fall back to
+    // the first entry.
+    const sorted = [...installs].sort((a, b) => {
+      const au =
+        typeof (a as { lastUpdated?: unknown }).lastUpdated === 'string'
+          ? (a as { lastUpdated: string }).lastUpdated
+          : '';
+      const bu =
+        typeof (b as { lastUpdated?: unknown }).lastUpdated === 'string'
+          ? (b as { lastUpdated: string }).lastUpdated
+          : '';
+      return bu.localeCompare(au);
+    });
+    const latest = sorted[0] as { installPath?: unknown };
+    if (typeof latest.installPath !== 'string' || latest.installPath.length === 0) {
+      continue;
+    }
+    // Normalize Windows backslashes to forward slashes so subsequent
+    // `join()` / `existsSync` calls work on both platforms.
+    const normalized = latest.installPath.replace(/\\/g, '/');
+    // Plugin name is the part before `@<marketplace>`.
+    const atIdx = key.indexOf('@');
+    const pluginName = atIdx === -1 ? key : key.slice(0, atIdx);
+    out.push({ pluginName, installPath: normalized });
+  }
+  return out;
 }
 
 function scanSkillDir(

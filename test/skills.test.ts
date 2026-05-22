@@ -277,6 +277,166 @@ describe('scanSkills — invalid / extras', () => {
   });
 });
 
+describe('scanSkills — Claude Code marketplace plugin layout (installed_plugins.json)', () => {
+  it('discovers skills via installed_plugins.json -> installPath/skills/', () => {
+    const home = tmp();
+    const cwd = tmp();
+    // Real-world layout: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/skills/<name>/SKILL.md
+    const installPath = join(
+      home,
+      '.claude',
+      'plugins',
+      'cache',
+      'claude-plugins-official',
+      'superpowers',
+      '5.0.7'
+    );
+    mkdirSync(join(installPath, 'skills', 'systematic-debugging'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(installPath, 'skills', 'systematic-debugging', 'SKILL.md'),
+      [
+        '---',
+        'name: systematic-debugging',
+        'description: Use when encountering any bug',
+        '---',
+        '',
+        'Body.',
+      ].join('\n'),
+      'utf8'
+    );
+    // Write the registry file pointing at the install.
+    mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+    writeFileSync(
+      join(home, '.claude', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'superpowers@claude-plugins-official': [
+            {
+              scope: 'user',
+              installPath: installPath.replace(/\//g, '\\'),
+              version: '5.0.7',
+              lastUpdated: '2026-04-13T08:38:52.509Z',
+            },
+          ],
+        },
+      })
+    );
+    const r = scanSkills({ cwd, homeDir: home });
+    expect(r.skills.map((s) => s.name)).toContain(
+      'superpowers:systematic-debugging'
+    );
+    const found = r.skills.find(
+      (s) => s.name === 'superpowers:systematic-debugging'
+    )!;
+    expect(found.scope).toBe('plugin');
+    expect(found.pluginName).toBe('superpowers');
+  });
+
+  it('picks the latest installation when multiple versions are registered', () => {
+    const home = tmp();
+    const cwd = tmp();
+    const baseDir = join(home, '.claude', 'plugins', 'cache', 'mkt', 'plug');
+    const v1Path = join(baseDir, '1.0.0');
+    const v2Path = join(baseDir, '2.0.0');
+    mkdirSync(join(v1Path, 'skills', 'old-skill'), { recursive: true });
+    mkdirSync(join(v2Path, 'skills', 'new-skill'), { recursive: true });
+    writeFileSync(
+      join(v1Path, 'skills', 'old-skill', 'SKILL.md'),
+      '---\nname: old-skill\ndescription: old\n---\n'
+    );
+    writeFileSync(
+      join(v2Path, 'skills', 'new-skill', 'SKILL.md'),
+      '---\nname: new-skill\ndescription: new\n---\n'
+    );
+    mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+    writeFileSync(
+      join(home, '.claude', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'plug@mkt': [
+            { installPath: v1Path, lastUpdated: '2025-01-01T00:00:00.000Z' },
+            { installPath: v2Path, lastUpdated: '2026-04-01T00:00:00.000Z' },
+          ],
+        },
+      })
+    );
+    const r = scanSkills({ cwd, homeDir: home });
+    const names = r.skills.map((s) => s.name);
+    expect(names).toContain('plug:new-skill');
+    expect(names).not.toContain('plug:old-skill');
+  });
+
+  it('tolerates a missing installed_plugins.json (falls back to legacy layout)', () => {
+    const home = tmp();
+    const cwd = tmp();
+    seedSkill(home, cwd, {
+      scope: 'plugin',
+      pluginName: 'legacy-plug',
+      name: 'a-skill',
+    });
+    const r = scanSkills({ cwd, homeDir: home });
+    expect(r.skills.map((s) => s.name)).toContain('legacy-plug:a-skill');
+  });
+
+  it('tolerates a malformed installed_plugins.json (skips, does not throw)', () => {
+    const home = tmp();
+    const cwd = tmp();
+    mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+    writeFileSync(
+      join(home, '.claude', 'plugins', 'installed_plugins.json'),
+      'not json {{{'
+    );
+    seedSkill(home, cwd, { scope: 'user', name: 'still-finds-user' });
+    const r = scanSkills({ cwd, homeDir: home });
+    expect(r.skills.map((s) => s.name)).toContain('still-finds-user');
+  });
+
+  it('does not double-count a plugin present in both registry and legacy layout', () => {
+    const home = tmp();
+    const cwd = tmp();
+    // Create the plugin in the legacy layout AND register it via JSON.
+    seedSkill(home, cwd, {
+      scope: 'plugin',
+      pluginName: 'dupe',
+      name: 'shared-skill',
+    });
+    const registryInstallPath = join(
+      home,
+      '.claude',
+      'plugins',
+      'cache',
+      'mkt',
+      'dupe',
+      '1.0'
+    );
+    mkdirSync(join(registryInstallPath, 'skills', 'shared-skill'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(registryInstallPath, 'skills', 'shared-skill', 'SKILL.md'),
+      '---\nname: shared-skill\ndescription: via registry\n---\n'
+    );
+    writeFileSync(
+      join(home, '.claude', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'dupe@mkt': [{ installPath: registryInstallPath }],
+        },
+      })
+    );
+    const r = scanSkills({ cwd, homeDir: home });
+    const dupeSkills = r.skills.filter((s) => s.name === 'dupe:shared-skill');
+    expect(dupeSkills.length).toBe(1);
+    // The registry-discovered version wins (its description reads "via registry").
+    expect(dupeSkills[0]!.description).toBe('via registry');
+  });
+});
+
 describe('scanSkills — multi-line description (YAML block scalars)', () => {
   it('handles `description: |` literal block scalar', () => {
     const home = tmp();
