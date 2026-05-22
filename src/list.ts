@@ -13,6 +13,8 @@ import {
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort list` — discovery command.
@@ -89,6 +91,12 @@ export interface ListOptions {
   cwd: string;
   templatesDir: string;
   scope: ListScope;
+  /**
+   * Skills baked into the bundled-body comparison (matches what
+   * `init` / `upgrade` would write today). Defaults to `[]` — CLI
+   * dispatchers pass the scanned list; tests can pass `[]` to opt out.
+   */
+  skills?: readonly Skill[];
 }
 
 const GATE_BLURBS: Record<GateName, string> = {
@@ -113,7 +121,7 @@ export function runList(opts: ListOptions): ListReport {
   const report: ListReport = { cwd: opts.cwd, scope: opts.scope };
 
   if (includeAgents) {
-    report.agents = listAgents(opts.cwd, opts.templatesDir, models);
+    report.agents = listAgents(opts.cwd, opts.templatesDir, models, opts.skills ?? []);
   }
   if (includeCommands) {
     report.commands = listCommands(opts.cwd, opts.templatesDir);
@@ -129,7 +137,8 @@ export function runList(opts: ListOptions): ListReport {
 function listAgents(
   cwd: string,
   templatesDir: string,
-  models: { premium: string; mid: string; cheap: string }
+  models: { premium: string; mid: string; cheap: string },
+  skills: readonly Skill[]
 ): ListAgentEntry[] {
   const templateDir = join(templatesDir, 'agents');
   const installedDir = join(cwd, '.claude', 'agents');
@@ -145,7 +154,9 @@ function listAgents(
 
   for (const f of bundledFiles) {
     const bundledRaw = readFileSync(join(templateDir, f), 'utf8');
-    const bundled = stampTemplate(renderAgentTemplate(bundledRaw, models));
+    const bundled = stampTemplate(
+      injectSkillsList(renderAgentTemplate(bundledRaw, models), skills)
+    );
     if (!installedFiles.has(f)) {
       entries.push(buildAgentEntry(f, bundled, null, models, 'missing'));
       continue;

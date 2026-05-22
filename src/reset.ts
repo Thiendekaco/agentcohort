@@ -4,6 +4,8 @@ import type { ModelsConfig } from './config';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 import {
   backupFile,
   backupPathFor,
@@ -99,6 +101,8 @@ export interface ResetOptions {
   dryRun: boolean;
   backup: boolean;
   models: ModelsConfig;
+  /** Skills baked into the rewritten agent (matches install/upgrade). */
+  skills?: readonly Skill[];
   now?: () => Date;
 }
 
@@ -159,6 +163,7 @@ export function runReset(opts: ResetOptions): ResetResult {
     dryRun: opts.dryRun,
     backup: opts.backup,
     models: opts.models,
+    skills: opts.skills ?? [],
     now: opts.now ?? (() => new Date()),
   });
 }
@@ -208,6 +213,7 @@ function performReset(args: {
   dryRun: boolean;
   backup: boolean;
   models: ModelsConfig;
+  skills: readonly Skill[];
   now: () => Date;
 }): ResetResult {
   const subdir = args.cand.kind === 'agent' ? 'agents' : 'commands';
@@ -247,7 +253,13 @@ function performReset(args: {
     args.cand.kind === 'agent'
       ? renderAgentTemplate(bundledRaw, args.models)
       : bundledRaw;
-  const newText = stampTemplate(rendered);
+  // Match what `init` / `upgrade` write today: agents get the
+  // boot-directive skills region refreshed for the current environment.
+  const withSkills =
+    args.cand.kind === 'agent'
+      ? injectSkillsList(rendered, args.skills)
+      : rendered;
+  const newText = stampTemplate(withSkills);
 
   // Missing: install fresh.
   if (!args.cand.installedExists) {

@@ -21,6 +21,8 @@ import {
   IntegrityVerdict,
 } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 import type { Logger } from './logger';
 import type { ModelsConfig } from './config';
 
@@ -102,6 +104,12 @@ export interface UpgradeOptions {
   /** When false, conflicts resolve via safe defaults (keep user version). */
   interactive: boolean;
   models: ModelsConfig;
+  /**
+   * Skills detected on the machine. When provided, the boot-directive
+   * skills region of each agent is refreshed in the rendered body
+   * (so upgrade picks up newly-installed skills). Defaults to `[]`.
+   */
+  skills?: readonly Skill[];
   resolver?: UpgradeResolver;
   now?: () => Date;
   logger?: Logger;
@@ -189,10 +197,14 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
 
   async function handleRegular(entry: ManifestEntry): Promise<void> {
     const rawTemplate = readFileSync(entry.templateAbsPath, 'utf8');
-    const rendered = entry.targetRelPath.startsWith('.claude/agents/')
+    const isAgent = entry.targetRelPath.startsWith('.claude/agents/');
+    const rendered = isAgent
       ? renderAgentTemplate(rawTemplate, options.models)
       : rawTemplate;
-    const bundled = stampTemplate(rendered);
+    const withSkills = isAgent
+      ? injectSkillsList(rendered, options.skills ?? [])
+      : rendered;
+    const bundled = stampTemplate(withSkills);
     const installed = readIfExists(entry.targetAbsPath);
 
     if (installed === null) {

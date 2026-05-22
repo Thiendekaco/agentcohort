@@ -520,11 +520,34 @@ Plugin-scope skills get a `<plugin>:<name>` qualified name (matches
 how Claude Code surfaces them). User and project skills use the bare
 name.
 
-This release also adds `Skill` to the `tools:` whitelist of every
-bundled agent — so each agent CAN invoke skills when appropriate.
-The next release (v0.10) wires the detected skill list into agent
-boot directives at `init` time, so each subagent knows what's
-available without the orchestrator forwarding the list.
+`Skill` is in the `tools:` whitelist of every bundled agent — so
+each agent CAN invoke skills when appropriate.
+
+**At `agentcohort init` time**, the detected skill list is baked
+into each agent's boot directive (between the
+`<!-- agentcohort-skills-start -->` and
+`<!-- agentcohort-skills-end -->` markers). The subagent's boot
+directive now reads, for example:
+
+```markdown
+3. Skills installed in this environment (detected at install time).
+   When the user's task matches one of these, invoke it via the
+   `Skill` tool BEFORE falling back to your playbook — the skill
+   runs in your context on your model tier and has full access
+   to its references and scripts:
+   - `superpowers:systematic-debugging` — Iron Law: no fixes without root cause
+   - `investigate` — Systematic debugging with root cause investigation
+   - ...
+```
+
+`upgrade` refreshes the list automatically (so newly-installed
+skills propagate next time you upgrade). `reset` on a single agent
+re-bakes the current list too. Local-override agents (created via
+`add --override`) are skipped — they own their content.
+
+When no skills are detected, the boot directive keeps a generic
+fallback: "Check available skills. If any skill matches what you're
+about to do, invoke it first."
 
 ### Share customizations across projects — `agentcohort export` / `import`
 

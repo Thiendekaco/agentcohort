@@ -11,6 +11,8 @@ import {
 import { renderAgentTemplate } from './render';
 import { compareIntegrity, IntegrityVerdict } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort doctor` — read-only health check.
@@ -53,6 +55,11 @@ export interface DoctorOptions {
   cwd: string;
   /** Bundled templates root. Defaulted by the CLI to the package's install dir. */
   templatesDir: string;
+  /**
+   * Skills baked into the bundled body so the integrity comparison
+   * matches what `init` / `upgrade` would write. Defaults to `[]`.
+   */
+  skills?: readonly Skill[];
 }
 
 const ROUTING_HEADING_RE = /^# Agentcohort Routing Rules[ \t]*$/gm;
@@ -65,7 +72,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   const sections: SectionReport[] = [];
   sections.push(checkProject(opts.cwd));
   sections.push(checkConfig(opts.cwd));
-  sections.push(checkAgents(opts.cwd, opts.templatesDir));
+  sections.push(checkAgents(opts.cwd, opts.templatesDir, opts.skills ?? []));
   sections.push(checkCommands(opts.cwd, opts.templatesDir));
   sections.push(checkClaudeMd(opts.cwd));
 
@@ -259,7 +266,11 @@ function checkConfig(cwd: string): SectionReport {
 
 // ---------- Sections: Agents / Commands ----------
 
-function checkAgents(cwd: string, templatesDir: string): SectionReport {
+function checkAgents(
+  cwd: string,
+  templatesDir: string,
+  skills: readonly Skill[]
+): SectionReport {
   return checkTemplateGroup({
     cwd,
     templatesDir,
@@ -269,6 +280,7 @@ function checkAgents(cwd: string, templatesDir: string): SectionReport {
     // concrete tier ID). Pass the user's models so the integrity check
     // compares apples to apples.
     render: true,
+    skills,
   });
 }
 
@@ -279,6 +291,7 @@ function checkCommands(cwd: string, templatesDir: string): SectionReport {
     group: 'commands',
     sectionName: 'Commands',
     render: false,
+    skills: [],
   });
 }
 
@@ -288,6 +301,7 @@ function checkTemplateGroup(args: {
   group: 'agents' | 'commands';
   sectionName: string;
   render: boolean;
+  skills: readonly Skill[];
 }): SectionReport {
   const checks: CheckResult[] = [];
   const installedDir = join(args.cwd, '.claude', args.group);
@@ -363,7 +377,7 @@ function checkTemplateGroup(args: {
     }
     const bundled = readFileSync(join(templateDir, f), 'utf8');
     const rendered = args.render
-      ? renderAgentTemplate(bundled, userModels)
+      ? injectSkillsList(renderAgentTemplate(bundled, userModels), args.skills)
       : bundled;
     const verdict: IntegrityVerdict = compareIntegrity(installed, rendered);
     if (verdict === 'user-edited') userEdited.push(f);

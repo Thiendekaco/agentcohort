@@ -19,6 +19,8 @@ import type { ConflictDecision, ConflictResolver } from './prompt';
 import type { Logger } from './logger';
 import { renderAgentTemplate } from './render';
 import { stampTemplate } from './stamp';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 import type { ModelsConfig } from './config';
 
 export type Disposition =
@@ -48,6 +50,13 @@ export interface InitOptions {
   /** When false, conflicts are resolved by safe automatic defaults. */
   interactive: boolean;
   models: ModelsConfig;
+  /**
+   * Skills detected on the machine — baked into each installed
+   * agent's boot directive so the subagent knows what's available
+   * to invoke via the `Skill` tool. Pass `[]` (or omit) for a
+   * generic install with no skills baked in.
+   */
+  skills?: readonly Skill[];
   resolver?: ConflictResolver;
   now?: () => Date;
   logger?: Logger;
@@ -165,12 +174,19 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
 
   async function handleRegular(entry: ManifestEntry): Promise<void> {
     const rawTemplate = readFileSync(entry.templateAbsPath, 'utf8');
-    const rendered = entry.targetRelPath.startsWith('.claude/agents/')
+    const isAgent = entry.targetRelPath.startsWith('.claude/agents/');
+    const rendered = isAgent
       ? renderAgentTemplate(rawTemplate, options.models)
       : rawTemplate;
+    // For agents only: rewrite the boot-directive skills region with
+    // the detected skill list (no-op for commands, which have no boot
+    // directive).
+    const withSkills = isAgent
+      ? injectSkillsList(rendered, options.skills ?? [])
+      : rendered;
     // Stamp every installed agent and command so `agentcohort doctor`
     // can later distinguish unchanged / outdated / user-edited / unstamped.
-    const template = stampTemplate(rendered);
+    const template = stampTemplate(withSkills);
     const existing = readIfExists(entry.targetAbsPath);
 
     if (existing === null) {
