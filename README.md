@@ -473,6 +473,141 @@ Behavior notes:
   target path — pass `--override --force` to authorize replacing
   that bundled-installed copy with the local one.
 
+### Skills integration — `agentcohort skills`
+
+Claude Code now ships a Skills system (`superpowers:*`, `caveman-*`,
+`investigate`, `review`, ...). agentcohort detects them so its
+bundled agents can invoke them at runtime via the `Skill` tool —
+skill content (including `references/` and scripts) runs in the
+subagent's context on the agent's configured model tier.
+
+```bash
+agentcohort skills              # detect + list (text)
+agentcohort skills --json       # machine-readable
+```
+
+Sample output:
+
+```
+38 skill(s) detected
+
+[user]
+  caveman-commit
+    └─ Ultra-compressed commit message generator. Cuts noise from commit messages...
+  investigate
+    └─ Systematic debugging with root cause investigation. Four phases...
+
+[plugin: superpowers]
+  superpowers:systematic-debugging
+    └─ Use when encountering any bug, test failure, or unexpected behavior...
+  superpowers:test-driven-development
+    └─ Use when implementing any feature or bugfix, before writing implementation code
+
+[project]
+  my-project-skill
+    └─ ...
+```
+
+Discovery scopes:
+
+| Scope | Path |
+|---|---|
+| `user` | `~/.claude/skills/<name>/SKILL.md` |
+| `plugin` | `~/.claude/plugins/<plugin>/skills/<name>/SKILL.md` |
+| `project` | `<cwd>/.claude/skills/<name>/SKILL.md` |
+
+Plugin-scope skills get a `<plugin>:<name>` qualified name (matches
+how Claude Code surfaces them). User and project skills use the bare
+name.
+
+`Skill` is in the `tools:` whitelist of every bundled agent — so
+each agent CAN invoke skills when appropriate.
+
+**At `agentcohort init` time**, the detected skill list is baked
+into each agent's boot directive (between the
+`<!-- agentcohort-skills-start -->` and
+`<!-- agentcohort-skills-end -->` markers). The subagent's boot
+directive now reads, for example:
+
+```markdown
+3. Skills installed in this environment (detected at install time).
+   When the user's task matches one of these, invoke it via the
+   `Skill` tool BEFORE falling back to your playbook — the skill
+   runs in your context on your model tier and has full access
+   to its references and scripts:
+   - `superpowers:systematic-debugging` — Iron Law: no fixes without root cause
+   - `investigate` — Systematic debugging with root cause investigation
+   - ...
+```
+
+`upgrade` refreshes the list automatically (so newly-installed
+skills propagate next time you upgrade). `reset` on a single agent
+re-bakes the current list too. Local-override agents (created via
+`add --override`) are skipped — they own their content.
+
+**Each agent only sees skills relevant to its role** — this is the
+**skill affinity** layer. The hardcoded `DEFAULT_AFFINITY` map (in
+`src/skillAffinity.ts`) wires every known skill (`superpowers:*`,
+plugin skills, common community skills) to a curated list of bundled
+agents:
+
+- `superpowers:systematic-debugging` → bug-hunter, root-cause-analyst, reproduction-engineer
+- `superpowers:test-driven-development` → test-verifier, feature-implementer
+- `superpowers:writing-plans` → solution-architect, feature-planner
+- `review` → final-reviewer, perf-reviewer
+- `caveman-commit` → `[]` (commit-message tool, not subagent-appropriate)
+- ... (full map covers 40+ known skills)
+
+Unknown skills (not in the map) default to **no agents** — safer
+than the noisy "show everywhere" alternative. To wire a custom skill
+to specific agents, add it to `.agentcohort.json`:
+
+```json
+{
+  "version": 1,
+  "models": { ... },
+  "skillAffinity": {
+    "my-internal-skill": ["bug-hunter", "feature-implementer"],
+    "superpowers:systematic-debugging": []
+  }
+}
+```
+
+User entries **replace** defaults for that skill (so an empty array
+mutes a default-mapped skill).
+
+**To refresh just the skill list (without doing a full `upgrade`)**,
+use `agentcohort refresh-skills`:
+
+```bash
+agentcohort refresh-skills              # preview + interactive confirm
+agentcohort refresh-skills --dry-run    # preview only
+agentcohort refresh-skills --yes        # apply, no prompt
+agentcohort refresh-skills --backup     # back up each rewritten file
+```
+
+This is narrower than `upgrade` — only the boot directive's skill
+region is rewritten, leaving everything else untouched. Safety
+contract:
+
+| File state | What refresh-skills does |
+|---|---|
+| Skill region matches current → noop | reported as `noop` |
+| Skill region stale, rest matches bundled | rewrites, reports `updated` |
+| Has `_agentcohort_local: true` | reported as `skipped-local`, never touched |
+| Body outside skill region also diverges from bundled | reported as `skipped-user-edited` — must reconcile via `upgrade` first |
+| Missing the `<!-- agentcohort-skills-* -->` markers (legacy install) | reported as `skipped-missing-markers` — run `upgrade` once to land the markers |
+
+**`agentcohort doctor` warns about skill drift** with a check named
+`agents.skills-stale`. The message points directly at
+`refresh-skills` so you don't have to guess between `upgrade` and
+`refresh-skills` — drift in just the skill list is a refresh-skills
+job; drift in the bundled template body is an upgrade job.
+
+When no skills are detected, the boot directive keeps a generic
+fallback: "Check available skills. If any skill matches what you're
+about to do, invoke it first."
+
 ### Share customizations across projects — `agentcohort export` / `import`
 
 Bundle every local file (`add` / `add --override` output) plus
@@ -760,6 +895,10 @@ runs.
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
+| `agentcohort skills` | **Read-only** — detect Claude Code skills installed in user / plugin / project scope. Lists each with its description. |
+| `agentcohort skills --json` | Same data, machine-readable JSON output. |
+| `agentcohort refresh-skills` | **Mutating** — re-bake the boot-directive skill list in every installed bundled agent. Narrower than `upgrade`: only the skill region changes. Local files and user-edited bodies are skipped. |
+| `agentcohort refresh-skills --dry-run \| --yes \| --backup` | Preview / skip prompt / back up each rewritten file. |
 | `agentcohort add <name>` | **Mutating** — scaffold a new user-authored agent or command marked `_agentcohort_local: true` (so `upgrade` leaves it alone). Defaults to `agent`; use `command/<name>` for commands. |
 | `agentcohort add <name> --kind=<archetype>` | Agent archetype: `analyst` / `implementer` / `reviewer` / `gate` / `empty` (default `empty`). |
 | `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |

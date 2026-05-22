@@ -4,6 +4,13 @@ import type { ModelsConfig } from './config';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity, IntegrityVerdict } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort show <name>` — print the body of one installed or
@@ -63,6 +70,10 @@ export interface ShowOptions {
   variant: ShowVariant;
   /** Resolved models — required for rendering agent templates. */
   models: ModelsConfig;
+  /** Skills baked into the bundled body (matches install/upgrade output). */
+  skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 export function runShow(opts: ShowOptions): ShowResult {
@@ -71,6 +82,7 @@ export function runShow(opts: ShowOptions): ShowResult {
     restrictTo !== undefined ? [restrictTo] : ['agent', 'command'];
 
   const matches: ShowMatch[] = [];
+  const affinity = resolveAffinity(opts.affinity);
   for (const kind of lookFor) {
     const m = lookupOne({
       kind,
@@ -79,6 +91,8 @@ export function runShow(opts: ShowOptions): ShowResult {
       templatesDir: opts.templatesDir,
       variant: opts.variant,
       models: opts.models,
+      skills: opts.skills ?? [],
+      affinity,
     });
     if (m !== null) matches.push(m);
   }
@@ -117,6 +131,8 @@ function lookupOne(args: {
   templatesDir: string;
   variant: ShowVariant;
   models: ModelsConfig;
+  skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): ShowMatch | null {
   const subdir = args.kind === 'agent' ? 'agents' : 'commands';
   // Strip a `.md` extension the user may have included so both
@@ -147,8 +163,12 @@ function lookupOne(args: {
   if (args.variant === 'bundled') {
     if (!bundledExists) return null;
     const raw = readFileSync(bundledPath, 'utf8');
-    const rendered =
+    let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
+    if (args.kind === 'agent') {
+      const relevant = relevantSkills(baseName, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
+    }
     return {
       kind: args.kind,
       name: baseName,
@@ -170,11 +190,17 @@ function lookupOne(args: {
       status = 'local';
     } else if (bundledExists) {
       const bundledRaw = readFileSync(bundledPath, 'utf8');
-      const bundled = stampTemplate(
-        args.kind === 'agent'
-          ? renderAgentTemplate(bundledRaw, args.models)
-          : bundledRaw
-      );
+      let bundledRendered: string;
+      if (args.kind === 'agent') {
+        const relevant = relevantSkills(baseName, args.skills, args.affinity);
+        bundledRendered = injectSkillsList(
+          renderAgentTemplate(bundledRaw, args.models),
+          relevant
+        );
+      } else {
+        bundledRendered = bundledRaw;
+      }
+      const bundled = stampTemplate(bundledRendered);
       status = compareIntegrity(installed, bundled);
     } else {
       status = 'no-bundled';
@@ -194,8 +220,12 @@ function lookupOne(args: {
 
   if (bundledExists) {
     const raw = readFileSync(bundledPath, 'utf8');
-    const rendered =
+    let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
+    if (args.kind === 'agent') {
+      const relevant = relevantSkills(baseName, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
+    }
     return {
       kind: args.kind,
       name: baseName,

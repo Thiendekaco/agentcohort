@@ -11,6 +11,17 @@ import {
 import { renderAgentTemplate } from './render';
 import { compareIntegrity, IntegrityVerdict } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import {
+  injectSkillsList,
+  hasSkillsRegion,
+  extractSkillsRegion,
+} from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort doctor` — read-only health check.
@@ -53,6 +64,13 @@ export interface DoctorOptions {
   cwd: string;
   /** Bundled templates root. Defaulted by the CLI to the package's install dir. */
   templatesDir: string;
+  /**
+   * Skills baked into the bundled body so the integrity comparison
+   * matches what `init` / `upgrade` would write. Defaults to `[]`.
+   */
+  skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 const ROUTING_HEADING_RE = /^# Agentcohort Routing Rules[ \t]*$/gm;
@@ -65,7 +83,14 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   const sections: SectionReport[] = [];
   sections.push(checkProject(opts.cwd));
   sections.push(checkConfig(opts.cwd));
-  sections.push(checkAgents(opts.cwd, opts.templatesDir));
+  sections.push(
+    checkAgents(
+      opts.cwd,
+      opts.templatesDir,
+      opts.skills ?? [],
+      resolveAffinity(opts.affinity)
+    )
+  );
   sections.push(checkCommands(opts.cwd, opts.templatesDir));
   sections.push(checkClaudeMd(opts.cwd));
 
@@ -259,7 +284,12 @@ function checkConfig(cwd: string): SectionReport {
 
 // ---------- Sections: Agents / Commands ----------
 
-function checkAgents(cwd: string, templatesDir: string): SectionReport {
+function checkAgents(
+  cwd: string,
+  templatesDir: string,
+  skills: readonly Skill[],
+  affinity: SkillAffinity
+): SectionReport {
   return checkTemplateGroup({
     cwd,
     templatesDir,
@@ -269,6 +299,8 @@ function checkAgents(cwd: string, templatesDir: string): SectionReport {
     // concrete tier ID). Pass the user's models so the integrity check
     // compares apples to apples.
     render: true,
+    skills,
+    affinity,
   });
 }
 
@@ -279,6 +311,8 @@ function checkCommands(cwd: string, templatesDir: string): SectionReport {
     group: 'commands',
     sectionName: 'Commands',
     render: false,
+    skills: [],
+    affinity: {},
   });
 }
 
@@ -288,6 +322,8 @@ function checkTemplateGroup(args: {
   group: 'agents' | 'commands';
   sectionName: string;
   render: boolean;
+  skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): SectionReport {
   const checks: CheckResult[] = [];
   const installedDir = join(args.cwd, '.claude', args.group);
@@ -350,6 +386,11 @@ function checkTemplateGroup(args: {
   const userEdited: string[] = [];
   const outdated: string[] = [];
   const unstamped: string[] = [];
+  // "Skill drift" is reported separately from `outdated` so the user
+  // gets a concrete remediation hint (`refresh-skills`) instead of the
+  // catch-all `init/upgrade`. Only applies to agents (commands don't
+  // have a skills boot region).
+  const skillsStale: string[] = [];
 
   for (const f of bundledFiles) {
     if (!installedSet.has(f)) {
@@ -362,13 +403,35 @@ function checkTemplateGroup(args: {
       continue;
     }
     const bundled = readFileSync(join(templateDir, f), 'utf8');
+    const agentName = f.replace(/\.md$/, '');
+    const relevant = args.render
+      ? relevantSkills(agentName, args.skills, args.affinity)
+      : [];
     const rendered = args.render
-      ? renderAgentTemplate(bundled, userModels)
+      ? injectSkillsList(renderAgentTemplate(bundled, userModels), relevant)
       : bundled;
     const verdict: IntegrityVerdict = compareIntegrity(installed, rendered);
     if (verdict === 'user-edited') userEdited.push(f);
     else if (verdict === 'outdated') outdated.push(f);
     else if (verdict === 'unstamped') unstamped.push(f);
+
+    // Independent skill-drift check for agents: only flag when the
+    // installed file has the marker pair AND the embedded skill region
+    // differs from what `init` would write today. This is reported
+    // additionally — it overlaps with `outdated` when only skills
+    // changed, but the message tells the user exactly which command
+    // to run.
+    if (args.render && hasSkillsRegion(installed)) {
+      const installedRegion = extractSkillsRegion(installed);
+      const expectedRegion = extractSkillsRegion(rendered);
+      if (
+        installedRegion !== null &&
+        expectedRegion !== null &&
+        installedRegion !== expectedRegion
+      ) {
+        skillsStale.push(f);
+      }
+    }
   }
 
   // "Installed" count includes overrides — they are the user's chosen
@@ -418,6 +481,14 @@ function checkTemplateGroup(args: {
       severity: 'warn',
       message: `${unstamped.length} file(s) have no integrity stamp (pre-0.4.0 install)`,
       detail: unstamped,
+    });
+  }
+  if (skillsStale.length > 0) {
+    checks.push({
+      id: `${args.group}.skills-stale`,
+      severity: 'warn',
+      message: `${skillsStale.length} agent(s) have a stale skill list — run \`agentcohort refresh-skills\` to re-bake`,
+      detail: skillsStale,
     });
   }
   if (localNew.length > 0 || localOverride.length > 0) {

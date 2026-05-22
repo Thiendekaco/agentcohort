@@ -13,6 +13,13 @@ import {
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort list` — discovery command.
@@ -89,6 +96,14 @@ export interface ListOptions {
   cwd: string;
   templatesDir: string;
   scope: ListScope;
+  /**
+   * Skills baked into the bundled-body comparison (matches what
+   * `init` / `upgrade` would write today). Defaults to `[]` — CLI
+   * dispatchers pass the scanned list; tests can pass `[]` to opt out.
+   */
+  skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 const GATE_BLURBS: Record<GateName, string> = {
@@ -113,7 +128,13 @@ export function runList(opts: ListOptions): ListReport {
   const report: ListReport = { cwd: opts.cwd, scope: opts.scope };
 
   if (includeAgents) {
-    report.agents = listAgents(opts.cwd, opts.templatesDir, models);
+    report.agents = listAgents(
+      opts.cwd,
+      opts.templatesDir,
+      models,
+      opts.skills ?? [],
+      resolveAffinity(opts.affinity)
+    );
   }
   if (includeCommands) {
     report.commands = listCommands(opts.cwd, opts.templatesDir);
@@ -129,7 +150,9 @@ export function runList(opts: ListOptions): ListReport {
 function listAgents(
   cwd: string,
   templatesDir: string,
-  models: { premium: string; mid: string; cheap: string }
+  models: { premium: string; mid: string; cheap: string },
+  skills: readonly Skill[],
+  affinity: SkillAffinity
 ): ListAgentEntry[] {
   const templateDir = join(templatesDir, 'agents');
   const installedDir = join(cwd, '.claude', 'agents');
@@ -145,7 +168,11 @@ function listAgents(
 
   for (const f of bundledFiles) {
     const bundledRaw = readFileSync(join(templateDir, f), 'utf8');
-    const bundled = stampTemplate(renderAgentTemplate(bundledRaw, models));
+    const agentName = f.replace(/\.md$/, '');
+    const relevant = relevantSkills(agentName, skills, affinity);
+    const bundled = stampTemplate(
+      injectSkillsList(renderAgentTemplate(bundledRaw, models), relevant)
+    );
     if (!installedFiles.has(f)) {
       entries.push(buildAgentEntry(f, bundled, null, models, 'missing'));
       continue;

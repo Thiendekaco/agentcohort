@@ -5,6 +5,13 @@ import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { unifiedDiff } from './textDiff';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort diff` — read-only file-level diff between installed
@@ -74,6 +81,10 @@ export interface DiffOptions {
   query: string | null;
   scope: DiffScope;
   models: ModelsConfig;
+  /** Skills baked into the bundled body (matches install/upgrade output). */
+  skills?: readonly Skill[];
+  /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
+  affinity?: SkillAffinity;
 }
 
 export function runDiff(opts: DiffOptions): DiffResult {
@@ -91,6 +102,7 @@ export function runDiff(opts: DiffOptions): DiffResult {
   })();
 
   const entries: DiffFileEntry[] = [];
+  const affinity = resolveAffinity(opts.affinity);
   for (const kind of kindsToScan) {
     entries.push(
       ...scanKind({
@@ -99,6 +111,8 @@ export function runDiff(opts: DiffOptions): DiffResult {
         templatesDir: opts.templatesDir,
         models: opts.models,
         targetName,
+        skills: opts.skills ?? [],
+        affinity,
       })
     );
   }
@@ -158,6 +172,8 @@ function scanKind(args: {
   templatesDir: string;
   models: ModelsConfig;
   targetName: string | null;
+  skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): DiffFileEntry[] {
   const subdir = args.kind === 'agent' ? 'agents' : 'commands';
   const installedDir = join(args.cwd, '.claude', subdir);
@@ -185,6 +201,8 @@ function scanKind(args: {
         installedExists: installedFiles.has(f),
         bundledExists: bundledFiles.has(f),
         models: args.models,
+        skills: args.skills,
+        affinity: args.affinity,
       })
     );
   }
@@ -200,6 +218,8 @@ function buildEntry(args: {
   installedExists: boolean;
   bundledExists: boolean;
   models: ModelsConfig;
+  skills: readonly Skill[];
+  affinity: SkillAffinity;
 }): DiffFileEntry {
   const installedPath = join(args.installedDir, args.filename);
   const bundledPath = join(args.bundledDir, args.filename);
@@ -209,8 +229,12 @@ function buildEntry(args: {
   let bundledRenderedStamped = '';
   if (args.bundledExists) {
     const raw = readFileSync(bundledPath, 'utf8');
-    const rendered =
+    let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
+    if (args.kind === 'agent') {
+      const relevant = relevantSkills(args.name, args.skills, args.affinity);
+      rendered = injectSkillsList(rendered, relevant);
+    }
     bundledRenderedStamped = stampTemplate(rendered);
   }
   const installed = args.installedExists

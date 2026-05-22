@@ -19,6 +19,13 @@ import type { ConflictDecision, ConflictResolver } from './prompt';
 import type { Logger } from './logger';
 import { renderAgentTemplate } from './render';
 import { stampTemplate } from './stamp';
+import { injectSkillsList } from './skillsBoot';
+import {
+  resolveAffinity,
+  relevantSkills,
+  SkillAffinity,
+} from './skillAffinity';
+import type { Skill } from './skills';
 import type { ModelsConfig } from './config';
 
 export type Disposition =
@@ -48,6 +55,19 @@ export interface InitOptions {
   /** When false, conflicts are resolved by safe automatic defaults. */
   interactive: boolean;
   models: ModelsConfig;
+  /**
+   * Skills detected on the machine — baked into each installed
+   * agent's boot directive so the subagent knows what's available
+   * to invoke via the `Skill` tool. Pass `[]` (or omit) for a
+   * generic install with no skills baked in.
+   */
+  skills?: readonly Skill[];
+  /**
+   * Affinity map for per-agent skill curation. When omitted, falls
+   * back to the built-in DEFAULT_AFFINITY. Pass an explicit empty
+   * `{}` to use defaults only (no user override).
+   */
+  affinity?: SkillAffinity;
   resolver?: ConflictResolver;
   now?: () => Date;
   logger?: Logger;
@@ -151,6 +171,8 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     return path;
   };
 
+  const affinity = resolveAffinity(options.affinity);
+
   for (const entry of manifest) {
     if (entry.kind === 'regular') {
       await handleRegular(entry);
@@ -165,12 +187,26 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
 
   async function handleRegular(entry: ManifestEntry): Promise<void> {
     const rawTemplate = readFileSync(entry.templateAbsPath, 'utf8');
-    const rendered = entry.targetRelPath.startsWith('.claude/agents/')
+    const isAgent = entry.targetRelPath.startsWith('.claude/agents/');
+    const rendered = isAgent
       ? renderAgentTemplate(rawTemplate, options.models)
       : rawTemplate;
+    // For agents only: rewrite the boot-directive skills region with
+    // the detected skill list, filtered to skills relevant to THIS
+    // agent per the affinity map (no-op for commands, which have no
+    // boot directive).
+    const agentName = isAgent
+      ? entry.targetRelPath.replace(/^\.claude\/agents\//, '').replace(/\.md$/, '')
+      : '';
+    const relevant = isAgent
+      ? relevantSkills(agentName, options.skills ?? [], affinity)
+      : [];
+    const withSkills = isAgent
+      ? injectSkillsList(rendered, relevant)
+      : rendered;
     // Stamp every installed agent and command so `agentcohort doctor`
     // can later distinguish unchanged / outdated / user-edited / unstamped.
-    const template = stampTemplate(rendered);
+    const template = stampTemplate(withSkills);
     const existing = readIfExists(entry.targetAbsPath);
 
     if (existing === null) {
