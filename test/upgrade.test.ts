@@ -387,3 +387,66 @@ function copyDirSync(from: string, to: string): void {
     else copyFileSync(src, dst);
   }
 }
+
+describe('runUpgrade — overlay-aware (PR2)', () => {
+  it('never overwrites a file carrying `_agentcohort_local: true`', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    const localBody = `---
+name: bug-hunter
+description: My customized bug hunter
+tools: Read
+model: opus
+_agentcohort_local: true
+---
+
+# Role
+
+My customization wins.
+`;
+    writeFileSync(overridePath, localBody, 'utf8');
+    const result = await runUpgrade({
+      cwd,
+      dryRun: false,
+      force: true,
+      backup: false,
+      interactive: false,
+      models: { ...DEFAULT_MODELS },
+      templatesDir: TEMPLATES,
+    });
+    // File content unchanged.
+    expect(readFileSync(overridePath, 'utf8')).toBe(localBody);
+    // Action recorded as kept-local.
+    const action = result.actions.find((a) =>
+      a.targetRelPath.endsWith('bug-hunter.md')
+    )!;
+    expect(action.disposition).toBe('kept-local');
+    expect(action.verdict).toBe('local');
+  });
+
+  it('local-new files (no bundled equivalent) are simply not in the manifest and untouched', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const localPath = join(cwd, '.claude', 'agents', 'my-custom.md');
+    const body = `---
+name: my-custom
+description: Custom
+_agentcohort_local: true
+---
+
+Body.
+`;
+    writeFileSync(localPath, body, 'utf8');
+    await runUpgrade({
+      cwd,
+      dryRun: false,
+      force: true,
+      backup: false,
+      interactive: false,
+      models: { ...DEFAULT_MODELS },
+      templatesDir: TEMPLATES,
+    });
+    expect(readFileSync(localPath, 'utf8')).toBe(body);
+  });
+});

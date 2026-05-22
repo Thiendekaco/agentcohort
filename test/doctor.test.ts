@@ -283,3 +283,68 @@ describe('runDoctor — exit codes', () => {
     expect(runDoctor({ cwd, templatesDir: TEMPLATES }).exitCode).toBe(1);
   });
 });
+
+describe('runDoctor — overlay-aware (PR2)', () => {
+  it('does NOT flag a local-override as user-edited / unstamped', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const overridePath = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    writeFileSync(
+      overridePath,
+      `---
+name: bug-hunter
+description: My override
+_agentcohort_local: true
+---
+
+# Role
+
+Local.
+`,
+      'utf8'
+    );
+    const report = runDoctor({ cwd, templatesDir: TEMPLATES });
+    const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
+    const issues = agentsSection.checks.filter(
+      (c) =>
+        c.id.endsWith('.user-edited') ||
+        c.id.endsWith('.unstamped') ||
+        c.id.endsWith('.outdated') ||
+        c.id.endsWith('.extra')
+    );
+    for (const i of issues) {
+      expect(i.detail ?? []).not.toContain('bug-hunter.md');
+    }
+    // And there IS a local check entry.
+    const localCheck = agentsSection.checks.find((c) => c.id === 'agents.local');
+    expect(localCheck).toBeDefined();
+    expect(localCheck!.detail?.some((d) => d.startsWith('bug-hunter.md'))).toBe(
+      true
+    );
+  });
+
+  it('counts a local-new file under `local`, not under `extra`', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const localPath = join(cwd, '.claude', 'agents', 'my-new.md');
+    writeFileSync(
+      localPath,
+      `---
+name: my-new
+description: New
+_agentcohort_local: true
+---
+
+Body.
+`,
+      'utf8'
+    );
+    const report = runDoctor({ cwd, templatesDir: TEMPLATES });
+    const agentsSection = report.sections.find((s) => s.name === 'Agents')!;
+    const extra = agentsSection.checks.find((c) => c.id === 'agents.extra');
+    expect(extra).toBeUndefined();
+    const local = agentsSection.checks.find((c) => c.id === 'agents.local');
+    expect(local).toBeDefined();
+    expect(local!.detail).toContain('my-new.md');
+  });
+});

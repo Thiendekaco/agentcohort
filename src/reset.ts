@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { ModelsConfig } from './config';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
+import { hasLocalMarker } from './localMarker';
 import {
   backupFile,
   backupPathFor,
@@ -37,9 +38,10 @@ export type ResetKind = 'agent' | 'command';
 
 export type ResetDisposition =
   | 'noop' // file already matches the current bundled body
-  | 'reset' // installed file overwritten with bundled (was outdated / user-edited / unstamped)
+  | 'reset' // installed file overwritten with bundled (was outdated / user-edited / unstamped / local-override)
   | 'installed' // bundled file did not exist locally; written fresh
   | 'refused-extra' // file installed locally but not part of the bundled set
+  | 'refused-local-new' // file is user-authored (`_agentcohort_local: true`) with no bundled equivalent
   | 'refused-not-found' // no match in either kind
   | 'refused-ambiguous'; // bare name matched both an agent and a command
 
@@ -48,6 +50,8 @@ export type ResetPreStatus =
   | 'outdated'
   | 'user-edited'
   | 'unstamped'
+  | 'local-override' // installed has the local marker AND bundled exists
+  | 'local-new' // installed has the local marker AND no bundled equivalent
   | 'missing'
   | 'extra'
   | 'not-found';
@@ -211,8 +215,11 @@ function performReset(args: {
   const installedPath = join(args.cwd, '.claude', subdir, filename);
   const bundledPath = join(args.templatesDir, subdir, filename);
 
-  // Extra: refuse — there is nothing to reset to.
+  // Extra: refuse — there is nothing to reset to. A user-authored
+  // local file gets its own disposition with a clearer message.
   if (args.cand.installedExists && !args.cand.bundledExists) {
+    const installed = readFileSync(installedPath, 'utf8');
+    const isLocal = hasLocalMarker(installed);
     return {
       cwd: args.cwd,
       query: args.query,
@@ -220,11 +227,11 @@ function performReset(args: {
       action: {
         kind: args.cand.kind,
         name: args.cand.name,
-        preStatus: 'extra',
-        disposition: 'refused-extra',
+        preStatus: isLocal ? 'local-new' : 'extra',
+        disposition: isLocal ? 'refused-local-new' : 'refused-extra',
         installedPath,
         bundledPath,
-        oldText: '',
+        oldText: installed,
         newText: '',
         dryRun: args.dryRun,
       },
@@ -266,6 +273,38 @@ function performReset(args: {
 
   // Installed: compare integrity. If unchanged, no-op silently.
   const installed = readFileSync(installedPath, 'utf8');
+
+  // Local override: explicit "reset" means revert to bundled, but
+  // distinguish the pre-status so the user sees what's actually being
+  // dropped (their override, not an upstream drift).
+  if (hasLocalMarker(installed)) {
+    let backupPath: string | undefined;
+    if (args.backup) {
+      backupPath = uniqueBackupPath(installedPath, args.now());
+      if (!args.dryRun) backupFile(installedPath, backupPath);
+    }
+    if (!args.dryRun) writeFileEnsuringDir(installedPath, newText);
+    const action: ResetAction = {
+      kind: args.cand.kind,
+      name: args.cand.name,
+      preStatus: 'local-override',
+      disposition: 'reset',
+      installedPath,
+      bundledPath,
+      oldText: installed,
+      newText,
+      dryRun: args.dryRun,
+    };
+    if (backupPath !== undefined) action.backupPath = backupPath;
+    return {
+      cwd: args.cwd,
+      query: args.query,
+      ...(args.restrictTo !== undefined ? { restrictTo: args.restrictTo } : {}),
+      action,
+      exitCode: 0,
+    };
+  }
+
   const verdict = compareIntegrity(installed, newText);
   if (verdict === 'unchanged') {
     return {

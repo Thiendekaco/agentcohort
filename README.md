@@ -468,6 +468,25 @@ Behavior notes:
   local copy is **untouched** — that's the whole point of marking
   it local. To pull bundled improvements back in, use
   `agentcohort reset <name>` (which reverts the local override).
+- **Overriding an existing install:** the first time you override a
+  bundled agent after `init`, an installed copy already sits at the
+  target path — pass `--override --force` to authorize replacing
+  that bundled-installed copy with the local one.
+
+### How local files are treated by the rest of the CLI
+
+The `_agentcohort_local: true` marker is the single source of truth.
+Every command respects it consistently:
+
+| Command | Behavior on a marked file |
+|---|---|
+| `agentcohort list` | `[local]` status (no bundled equivalent) or `[local-override]` (same name as a bundled file) |
+| `agentcohort doctor` | Listed under a `local` check (informational, never a warning) |
+| `agentcohort show <name>` | Banner reads `integrity: local (user-authored — upgrade leaves it alone)` |
+| `agentcohort diff <name>` | Local-new: empty diff (nothing to compare). Local-override: shows what your override changed from bundled. |
+| `agentcohort upgrade` | Disposition `kept-local` — never overwritten, never prompted |
+| `agentcohort reset <name>` | Local-override: reverts to bundled body (`Was: local-override`). Local-new: `refused-local-new` — there is no bundled to revert to |
+| `agentcohort uninstall` | `kept-user-file` for both local-new and local-override — user-authored content is never deleted |
 
 ### Shell completion — `agentcohort completion <shell>`
 

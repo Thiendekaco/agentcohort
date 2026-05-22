@@ -10,6 +10,7 @@ import {
 } from './defaults';
 import { renderAgentTemplate } from './render';
 import { compareIntegrity, IntegrityVerdict } from './stamp';
+import { hasLocalMarker } from './localMarker';
 
 /**
  * `agentcohort doctor` — read-only health check.
@@ -331,27 +332,47 @@ function checkTemplateGroup(args: {
   const installedSet = new Set(installedFiles);
   const bundledSet = new Set(bundledFiles);
 
-  const missing = bundledFiles.filter((f) => !installedSet.has(f));
-  const extra = installedFiles.filter((f) => !bundledSet.has(f));
+  // Partition `extra` into user-authored local files (carry the marker)
+  // vs truly extra files (no marker, no bundled equivalent).
+  const localNew: string[] = [];
+  const extra: string[] = [];
+  for (const f of installedFiles) {
+    if (bundledSet.has(f)) continue;
+    const body = readFileSync(join(installedDir, f), 'utf8');
+    if (hasLocalMarker(body)) localNew.push(f);
+    else extra.push(f);
+  }
 
-  // Integrity buckets for the intersection
+  // Local overrides (file shares a bundled name AND has the marker) are a
+  // deliberate user choice — never flag drift, never count as "missing".
+  const localOverride: string[] = [];
+  const missing: string[] = [];
   const userEdited: string[] = [];
   const outdated: string[] = [];
   const unstamped: string[] = [];
 
   for (const f of bundledFiles) {
-    if (!installedSet.has(f)) continue;
+    if (!installedSet.has(f)) {
+      missing.push(f);
+      continue;
+    }
+    const installed = readFileSync(join(installedDir, f), 'utf8');
+    if (hasLocalMarker(installed)) {
+      localOverride.push(f);
+      continue;
+    }
     const bundled = readFileSync(join(templateDir, f), 'utf8');
     const rendered = args.render
       ? renderAgentTemplate(bundled, userModels)
       : bundled;
-    const installed = readFileSync(join(installedDir, f), 'utf8');
     const verdict: IntegrityVerdict = compareIntegrity(installed, rendered);
     if (verdict === 'user-edited') userEdited.push(f);
     else if (verdict === 'outdated') outdated.push(f);
     else if (verdict === 'unstamped') unstamped.push(f);
   }
 
+  // "Installed" count includes overrides — they are the user's chosen
+  // version of a bundled slot, intentionally taking its place.
   const installedCount = bundledFiles.length - missing.length;
   checks.push({
     id: `${args.group}.count`,
@@ -397,6 +418,20 @@ function checkTemplateGroup(args: {
       severity: 'warn',
       message: `${unstamped.length} file(s) have no integrity stamp (pre-0.4.0 install)`,
       detail: unstamped,
+    });
+  }
+  if (localNew.length > 0 || localOverride.length > 0) {
+    const total = localNew.length + localOverride.length;
+    const segments: string[] = [];
+    if (localOverride.length > 0) {
+      segments.push(...localOverride.map((f) => `${f} (override)`));
+    }
+    if (localNew.length > 0) segments.push(...localNew);
+    checks.push({
+      id: `${args.group}.local`,
+      severity: 'ok',
+      message: `${total} user-authored file(s) (marked \`_agentcohort_local: true\` — upgrade leaves them alone)`,
+      detail: segments,
     });
   }
   return { name: args.sectionName, checks };

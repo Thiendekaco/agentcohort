@@ -20,6 +20,7 @@ import {
   compareIntegrity,
   IntegrityVerdict,
 } from './stamp';
+import { hasLocalMarker } from './localMarker';
 import type { Logger } from './logger';
 import type { ModelsConfig } from './config';
 
@@ -49,6 +50,7 @@ export type UpgradeDisposition =
   | 'overwritten' // user-edited → resolver said overwrite
   | 'backed-up-and-overwritten'
   | 'kept' // user-edited → resolver said keep
+  | 'kept-local' // file carries `_agentcohort_local: true` — never touched
   | 'created' // new file in bundled, not in installed
   | 'section-replaced'
   | 'section-unchanged'
@@ -57,7 +59,7 @@ export type UpgradeDisposition =
 export interface UpgradeAction {
   targetRelPath: string;
   kind: EntryKind;
-  verdict: IntegrityVerdict | 'new' | 'section-new' | 'section-existing';
+  verdict: IntegrityVerdict | 'new' | 'section-new' | 'section-existing' | 'local';
   disposition: UpgradeDisposition;
   backupPath?: string;
   dryRun: boolean;
@@ -158,6 +160,9 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
       case 'section-kept':
         log.warn(`${tag}kept local  ${a.targetRelPath}`);
         break;
+      case 'kept-local':
+        log.info(`${tag}local       ${a.targetRelPath}`);
+        break;
       case 'created':
         log.success(`${tag}install     ${a.targetRelPath}`);
         break;
@@ -200,6 +205,21 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
         disposition: 'created',
         dryRun: options.dryRun,
         newText: bundled,
+      });
+      return;
+    }
+
+    // Local override (file carries `_agentcohort_local: true`) is a
+    // deliberate user choice — never overwrite, never prompt. The whole
+    // point of the marker is to opt out of upgrade.
+    if (hasLocalMarker(installed)) {
+      record({
+        targetRelPath: entry.targetRelPath,
+        kind: entry.kind,
+        verdict: 'local',
+        disposition: 'kept-local',
+        dryRun: options.dryRun,
+        oldText: installed,
       });
       return;
     }
