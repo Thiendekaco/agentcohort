@@ -245,6 +245,110 @@ describe('parseArgs — completion subcommand', () => {
   });
 });
 
+describe('parseArgs — add command + value flags', () => {
+  it('captures the name as subcommand for `add`', () => {
+    const a = parseArgs(['add', 'my-expert']);
+    expect(a.command).toBe('add');
+    expect(a.subcommand).toBe('my-expert');
+  });
+
+  it('parses --override as a boolean flag', () => {
+    const a = parseArgs(['add', 'bug-hunter', '--override']);
+    expect(a.override).toBe(true);
+    expect(a.subcommand).toBe('bug-hunter');
+  });
+
+  it('parses --kind=<value>, --description=<value>, --model=<value>', () => {
+    const a = parseArgs([
+      'add',
+      'my-expert',
+      '--kind=analyst',
+      '--description=Domain expert',
+      '--model=opus',
+    ]);
+    expect(a.kind).toBe('analyst');
+    expect(a.description).toBe('Domain expert');
+    expect(a.model).toBe('opus');
+  });
+
+  it('accepts an empty value via --description=', () => {
+    const a = parseArgs(['add', 'foo', '--description=']);
+    expect(a.description).toBe('');
+  });
+
+  it('preserves an = sign inside the value (only the first = splits)', () => {
+    const a = parseArgs(['add', 'foo', '--description=role=analyst']);
+    expect(a.description).toBe('role=analyst');
+  });
+
+  it('does not set value flags by default', () => {
+    const a = parseArgs(['add', 'foo']);
+    expect(a.kind).toBeNull();
+    expect(a.description).toBeNull();
+    expect(a.model).toBeNull();
+    expect(a.override).toBe(false);
+  });
+
+  it('records an unknown --foo=bar as unknown', () => {
+    const a = parseArgs(['add', 'foo', '--bogus=value']);
+    expect(a.unknown).toContain('--bogus=value');
+  });
+
+  it('passes through agent/ and command/ prefixes in the subcommand', () => {
+    expect(parseArgs(['add', 'agent/foo']).subcommand).toBe('agent/foo');
+    expect(parseArgs(['add', 'command/foo']).subcommand).toBe('command/foo');
+  });
+});
+
+describe('parseArgs — export / import commands', () => {
+  it('parses `export` with no subcommand', () => {
+    const a = parseArgs(['export']);
+    expect(a.command).toBe('export');
+    expect(a.subcommand).toBeNull();
+  });
+
+  it('parses --out=<path> as a value flag', () => {
+    const a = parseArgs(['export', '--out=./pack.json']);
+    expect(a.out).toBe('./pack.json');
+  });
+
+  it('parses --no-config as a boolean flag', () => {
+    const a = parseArgs(['export', '--no-config']);
+    expect(a.noConfig).toBe(true);
+  });
+
+  it('captures the pack path as subcommand for `import`', () => {
+    const a = parseArgs(['import', './pack.json']);
+    expect(a.command).toBe('import');
+    expect(a.subcommand).toBe('./pack.json');
+  });
+
+  it('parses --force / --backup / --dry-run on import', () => {
+    const a = parseArgs([
+      'import',
+      './pack.json',
+      '--force',
+      '--backup',
+      '--dry-run',
+    ]);
+    expect(a.force).toBe(true);
+    expect(a.backup).toBe(true);
+    expect(a.dryRun).toBe(true);
+  });
+
+  it('value flags + boolean flags compose in any order', () => {
+    const a = parseArgs([
+      'export',
+      '--no-config',
+      '--out=./pack.json',
+      '--json',
+    ]);
+    expect(a.noConfig).toBe(true);
+    expect(a.out).toBe('./pack.json');
+    expect(a.json).toBe(true);
+  });
+});
+
 describe('parseArgs - PR 2 additions', () => {
   it('parses the new `config` command', () => {
     const a = parseArgs(['config']);

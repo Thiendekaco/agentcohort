@@ -12,6 +12,7 @@ import {
 } from './defaults';
 import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
+import { hasLocalMarker } from './localMarker';
 
 /**
  * `agentcohort list` — discovery command.
@@ -35,7 +36,9 @@ export type ListEntryStatus =
   | 'user-edited' // installed, body no longer matches its stamp
   | 'unstamped' // installed, no stamp (pre-0.4.0)
   | 'missing' // bundled but not installed
-  | 'extra'; // installed but not in the bundled set
+  | 'extra' // installed but not in the bundled set (no local marker)
+  | 'local' // user-authored file (carries `_agentcohort_local: true`)
+  | 'local-override'; // user-authored override of a same-named bundled file
 
 export interface ListAgentEntry {
   /** File basename without `.md`, e.g. "dispatcher". */
@@ -148,6 +151,14 @@ function listAgents(
       continue;
     }
     const installed = readFileSync(join(installedDir, f), 'utf8');
+    // A local override (file has the marker AND a bundled file shares the
+    // name) is a deliberate user choice — never flag as drift.
+    if (hasLocalMarker(installed)) {
+      entries.push(
+        buildAgentEntry(f, installed, installed, models, 'local-override')
+      );
+      continue;
+    }
     const verdict = compareIntegrity(installed, bundled);
     const status: ListEntryStatus =
       verdict === 'unchanged'
@@ -160,11 +171,13 @@ function listAgents(
     entries.push(buildAgentEntry(f, installed, installed, models, status));
   }
 
-  // Extra files installed locally that aren't part of the bundled set.
+  // Files installed locally that aren't part of the bundled set. Local
+  // (marker-carrying) ones surface as `local`; the rest are `extra`.
   for (const f of installedFiles) {
     if (bundledFiles.includes(f)) continue;
     const installed = readFileSync(join(installedDir, f), 'utf8');
-    entries.push(buildAgentEntry(f, installed, installed, models, 'extra'));
+    const status: ListEntryStatus = hasLocalMarker(installed) ? 'local' : 'extra';
+    entries.push(buildAgentEntry(f, installed, installed, models, status));
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -230,6 +243,10 @@ function listCommands(cwd: string, templatesDir: string): ListCommandEntry[] {
       continue;
     }
     const installed = readFileSync(join(installedDir, f), 'utf8');
+    if (hasLocalMarker(installed)) {
+      entries.push(buildCommandEntry(f, installed, 'local-override'));
+      continue;
+    }
     const verdict = compareIntegrity(installed, bundled);
     const status: ListEntryStatus =
       verdict === 'unchanged'
@@ -245,7 +262,8 @@ function listCommands(cwd: string, templatesDir: string): ListCommandEntry[] {
   for (const f of installedFiles) {
     if (bundledFiles.includes(f)) continue;
     const installed = readFileSync(join(installedDir, f), 'utf8');
-    entries.push(buildCommandEntry(f, installed, 'extra'));
+    const status: ListEntryStatus = hasLocalMarker(installed) ? 'local' : 'extra';
+    entries.push(buildCommandEntry(f, installed, status));
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name));

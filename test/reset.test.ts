@@ -317,3 +317,92 @@ describe('runReset — integration with stamp', () => {
   });
 });
 
+
+describe('runReset — overlay-aware (PR2)', () => {
+  it('reverts a local-override back to the bundled body', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const path = join(cwd, '.claude', 'agents', 'bug-hunter.md');
+    const overrideBody = `---
+name: bug-hunter
+description: My customized hunter
+_agentcohort_local: true
+---
+
+# Role
+
+Local.
+`;
+    writeFileSync(path, overrideBody, 'utf8');
+    const result = runReset({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'bug-hunter',
+      dryRun: false,
+      backup: false,
+      models: { ...DEFAULT_MODELS },
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.action.disposition).toBe('reset');
+    expect(result.action.preStatus).toBe('local-override');
+    const after = readFileSync(path, 'utf8');
+    expect(after).not.toContain('_agentcohort_local: true');
+    expect(after).toContain('_agentcohort_hash:');
+  });
+
+  it('refuses to reset a local-new file (no bundled equivalent)', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const localPath = join(cwd, '.claude', 'agents', 'my-custom.md');
+    const body = `---
+name: my-custom
+description: Custom
+_agentcohort_local: true
+---
+
+Body.
+`;
+    writeFileSync(localPath, body, 'utf8');
+    const result = runReset({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'my-custom',
+      dryRun: false,
+      backup: false,
+      models: { ...DEFAULT_MODELS },
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.action.disposition).toBe('refused-local-new');
+    expect(result.action.preStatus).toBe('local-new');
+    // File untouched.
+    expect(readFileSync(localPath, 'utf8')).toBe(body);
+  });
+
+  it('local-override reset writes a backup when --backup is set', async () => {
+    const cwd = project();
+    await fullInstall(cwd);
+    const path = join(cwd, '.claude', 'agents', 'dispatcher.md');
+    writeFileSync(
+      path,
+      `---
+name: dispatcher
+description: My dispatcher
+_agentcohort_local: true
+---
+
+Local.
+`,
+      'utf8'
+    );
+    const result = runReset({
+      cwd,
+      templatesDir: TEMPLATES,
+      query: 'dispatcher',
+      dryRun: false,
+      backup: true,
+      models: { ...DEFAULT_MODELS },
+    });
+    expect(result.action.backupPath).toBeDefined();
+    expect(existsSync(result.action.backupPath!)).toBe(true);
+  });
+});

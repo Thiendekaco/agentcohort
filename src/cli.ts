@@ -47,6 +47,19 @@ import {
   UninstallActionKind,
 } from './uninstall';
 import {
+  runAdd,
+  AddResult,
+  AgentArchetype,
+} from './add';
+import {
+  runExport,
+  runImport,
+  ExportResult,
+  ImportResult,
+  ImportFileEntry,
+  PackValidationError,
+} from './pack';
+import {
   buildContext as buildCompletionContext,
   generateCompletion,
   COMPLETION_SHELLS,
@@ -139,7 +152,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'diff' &&
     args.command !== 'reset' &&
     args.command !== 'uninstall' &&
-    args.command !== 'completion'
+    args.command !== 'completion' &&
+    args.command !== 'add' &&
+    args.command !== 'export' &&
+    args.command !== 'import'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -381,6 +397,272 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 130;
       }
       process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'export') {
+    try {
+      const result = runExport({
+        cwd: process.cwd(),
+        templatesDir: getTemplatesDir(),
+        outPath: args.out,
+        includeConfig: !args.noConfig,
+        version: getVersion(),
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else if (args.out === null) {
+        // Write the pack body itself to stdout; a human-readable
+        // summary still goes to stderr so piping `agentcohort export >
+        // pack.json` does the right thing.
+        process.stdout.write(
+          JSON.stringify(result.pack, null, 2) + '\n'
+        );
+        process.stderr.write(formatExportSummary(result));
+      } else {
+        process.stdout.write(formatExportSummary(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ export: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'import') {
+    const packPath = args.subcommand;
+    if (packPath === null || packPath === '') {
+      process.stderr.write(
+        paint(
+          '✗ import: missing <pack>. Usage: agentcohort import <path/to/pack.json> [--force] [--no-config] [--backup] [--dry-run]\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+    try {
+      const preview = runImport({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        packPath,
+        force: args.force,
+        importConfig: !args.noConfig,
+        backup: args.backup,
+        dryRun: true,
+      });
+
+      if (args.dryRun) {
+        if (args.json) {
+          process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatImportResult(preview));
+        }
+        return preview.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatImportPlan(preview));
+        const proceed = await confirm({
+          message: `Apply pack ${packPath}?`,
+          default: true,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ import: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runImport({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        packPath,
+        force: args.force,
+        importConfig: !args.noConfig,
+        backup: args.backup,
+        dryRun: false,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatImportResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      if (err instanceof PackValidationError) {
+        process.stderr.write(paint(`✗ import: ${err.message}\n`, 'red'));
+        return 1;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ import: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'add') {
+    const query = args.subcommand;
+    if (query === null || query === '') {
+      process.stderr.write(
+        paint(
+          '✗ add: missing <name>. Usage: agentcohort add <name> | agent/<name> | command/<name> [--kind=<archetype>] [--description=<text>] [--model=<tier>] [--override]\n',
+          'red'
+        )
+      );
+      return 1;
+    }
+    const kindFromQuery: 'agent' | 'command' =
+      query.startsWith('command/') || query.startsWith('commands/')
+        ? 'command'
+        : 'agent';
+    // Validate archetype.
+    let archetype: AgentArchetype | null = null;
+    if (args.kind !== null) {
+      const allowed: AgentArchetype[] = [
+        'analyst',
+        'implementer',
+        'reviewer',
+        'gate',
+        'empty',
+      ];
+      if (!allowed.includes(args.kind as AgentArchetype)) {
+        process.stderr.write(
+          paint(
+            `✗ add: --kind must be one of ${allowed.join(', ')} (got '${args.kind}').\n`,
+            'red'
+          )
+        );
+        return 1;
+      }
+      if (kindFromQuery === 'command') {
+        process.stderr.write(
+          paint(
+            '✗ add: --kind is only valid when adding an agent (got a command query).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+      archetype = args.kind as AgentArchetype;
+    }
+    // Validate model alias.
+    let model: 'haiku' | 'sonnet' | 'opus' | null = null;
+    if (args.model !== null) {
+      const allowedModels = ['haiku', 'sonnet', 'opus'] as const;
+      if (!(allowedModels as readonly string[]).includes(args.model)) {
+        process.stderr.write(
+          paint(
+            `✗ add: --model must be one of ${allowedModels.join(', ')} (got '${args.model}').\n`,
+            'red'
+          )
+        );
+        return 1;
+      }
+      if (kindFromQuery === 'command') {
+        process.stderr.write(
+          paint(
+            '✗ add: --model is only valid when adding an agent (got a command query).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+      model = args.model as 'haiku' | 'sonnet' | 'opus';
+    }
+
+    const cwd = process.cwd();
+    const stdinTTY = Boolean(process.stdin.isTTY);
+    const stdoutTTY = Boolean(process.stdout.isTTY);
+    const interactive =
+      !args.yes && !args.force && !args.dryRun && stdinTTY && stdoutTTY;
+
+    try {
+      const preview = runAdd({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        archetype,
+        description: args.description,
+        model,
+        override: args.override,
+        force: args.force,
+        dryRun: true,
+      });
+      const isMutating =
+        preview.disposition === 'created' ||
+        preview.disposition === 'override-created';
+
+      if (args.dryRun || !isMutating) {
+        const display: AddResult = { ...preview, dryRun: args.dryRun };
+        if (args.json) {
+          process.stdout.write(JSON.stringify(display, null, 2) + '\n');
+        } else {
+          process.stdout.write(formatAddResult(display));
+        }
+        return display.exitCode;
+      }
+
+      if (interactive) {
+        process.stdout.write(formatAddPreview(preview));
+        const proceed = await confirm({
+          message: `Write ${preview.installedPath}?`,
+          default: true,
+        });
+        if (!proceed) {
+          process.stdout.write(paint('Cancelled. No changes made.\n', 'yellow'));
+          return 130;
+        }
+      } else if (!args.yes && !args.force) {
+        process.stderr.write(
+          paint(
+            '✗ add: refusing to write in non-interactive mode without --yes (or --force).\n',
+            'red'
+          )
+        );
+        return 1;
+      }
+
+      const result = runAdd({
+        cwd,
+        templatesDir: getTemplatesDir(),
+        query,
+        archetype,
+        description: args.description,
+        model,
+        override: args.override,
+        force: args.force,
+        dryRun: false,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatAddResult(result));
+      }
+      return result.exitCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof ExitPromptError) {
+        process.stderr.write(paint('\nCancelled. No changes made.\n', 'yellow'));
+        return 130;
+      }
+      process.stderr.write(paint(`✗ add: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -927,13 +1209,15 @@ function formatListReport(report: ListReport): string {
   return out.join('\n') + '\n';
 }
 
-const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+const STATUS_COLOR: Record<ListEntryStatus, 'green' | 'yellow' | 'red' | 'gray' | 'cyan'> = {
   installed: 'green',
   outdated: 'yellow',
   'user-edited': 'yellow',
   unstamped: 'yellow',
   missing: 'red',
   extra: 'gray',
+  local: 'cyan',
+  'local-override': 'cyan',
 };
 
 function statusBadge(status: ListEntryStatus): string {
@@ -943,7 +1227,7 @@ function statusBadge(status: ListEntryStatus): string {
 function formatAgentsBlock(entries: ListAgentEntry[]): string {
   const out: string[] = [];
   const installed = entries.filter((e) => e.status === 'installed').length;
-  const total = entries.filter((e) => e.status !== 'extra').length;
+  const total = entries.filter((e) => e.status !== 'extra' && e.status !== 'local').length;
   out.push(
     paint(`Agents `, 'bold') +
       paint(`(${installed}/${total} installed)`, 'gray')
@@ -971,7 +1255,7 @@ function formatAgentsBlock(entries: ListAgentEntry[]): string {
 function formatCommandsBlock(entries: ListCommandEntry[]): string {
   const out: string[] = [];
   const installed = entries.filter((e) => e.status === 'installed').length;
-  const total = entries.filter((e) => e.status !== 'extra').length;
+  const total = entries.filter((e) => e.status !== 'extra' && e.status !== 'local').length;
   out.push(
     paint(`Commands `, 'bold') +
       paint(`(${installed}/${total} installed)`, 'gray')
@@ -1062,6 +1346,10 @@ function formatShowMatch(m: ShowMatch): string {
       outdated: paint('integrity: outdated (bundled has moved on)', 'yellow'),
       'user-edited': paint('integrity: user-edited (body diverges from stamp)', 'yellow'),
       unstamped: paint('integrity: unstamped (pre-0.4.0 install)', 'yellow'),
+      local: paint(
+        'integrity: local (user-authored — `agentcohort upgrade` leaves it alone)',
+        'cyan'
+      ),
     }[m.status];
     out.push(statusLabel);
   }
@@ -1180,6 +1468,7 @@ const RESET_DISP_COLOR: Record<ResetDisposition, 'green' | 'yellow' | 'red'> = {
   reset: 'yellow',
   installed: 'green',
   'refused-extra': 'red',
+  'refused-local-new': 'red',
   'refused-not-found': 'red',
   'refused-ambiguous': 'red',
 };
@@ -1195,7 +1484,18 @@ function formatResetResult(result: ResetResult): string {
       out.push(paint(`  Already matches the bundled body — nothing to do.`, 'gray'));
       break;
     case 'reset':
-      out.push(paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray'));
+      if (a.preStatus === 'local-override') {
+        out.push(
+          paint(
+            `  Removed local override and restored bundled body: ${a.installedPath}`,
+            'gray'
+          )
+        );
+      } else {
+        out.push(
+          paint(`  Was: ${a.preStatus}.  Wrote: ${a.installedPath}`, 'gray')
+        );
+      }
       if (a.backupPath) {
         out.push(paint(`  Backup: ${a.backupPath}`, 'gray'));
       }
@@ -1213,6 +1513,20 @@ function formatResetResult(result: ResetResult): string {
       out.push(
         paint(
           `    To remove a user-authored file, delete it manually from ${a.installedPath}.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-local-new':
+      out.push(
+        paint(
+          `  ✗ This file carries \`_agentcohort_local: true\` — it was added by you (or with \`agentcohort add\`) and has no bundled equivalent to revert to.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    To remove it, use \`agentcohort uninstall\` (which keeps user files by default — you'd need to delete this file manually) or delete ${a.installedPath} directly.`,
           'gray'
         )
       );
@@ -1245,7 +1559,16 @@ function formatResetPreview(preview: ResetResult): string {
       '  ' +
       (a.kind ? `${a.kind}/${a.name}` : a.name)
   );
-  out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  if (a.preStatus === 'local-override') {
+    out.push(
+      paint(
+        `  This is a LOCAL OVERRIDE — your customization will be dropped and replaced by the bundled body.`,
+        'yellow'
+      )
+    );
+  } else {
+    out.push(paint(`  Was: ${a.preStatus}.`, 'gray'));
+  }
   out.push(paint(`  Target: ${a.installedPath}`, 'gray'));
   if (preview.action.disposition === 'reset' && a.oldText !== '') {
     const diff = unifiedDiff(a.oldText, a.newText, {
@@ -1260,13 +1583,253 @@ function formatResetPreview(preview: ResetResult): string {
   return out.join('\n') + '\n';
 }
 
-const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray'> = {
+function formatAddResult(result: AddResult): string {
+  const out: string[] = [];
+  const head = `${result.dryRun ? '[dry-run] ' : ''}add`;
+  const label = `${result.kind}/${result.name}`;
+  switch (result.disposition) {
+    case 'created':
+      out.push(
+        paint(head, 'bold') + '  ' + label + '  ' + paint('created', 'green')
+      );
+      out.push(paint(`  Wrote: ${result.installedPath}`, 'gray'));
+      if (result.kind === 'agent' && result.archetype) {
+        out.push(paint(`  Archetype: ${result.archetype}`, 'gray'));
+      }
+      out.push(
+        paint(
+          `  Marked with \`_agentcohort_local: true\` — \`agentcohort upgrade\` will leave it alone.`,
+          'gray'
+        )
+      );
+      out.push(
+        paint(
+          `  Next: edit the file to customize the role, then add a routing rule under \`# Agentcohort Routing Rules\` in CLAUDE.md if you want the dispatcher to know about it.`,
+          'gray'
+        )
+      );
+      break;
+    case 'override-created':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('override-created', 'green')
+      );
+      out.push(paint(`  Wrote: ${result.installedPath}`, 'gray'));
+      out.push(
+        paint(
+          `  Body copied from the bundled template and marked as local.`,
+          'gray'
+        )
+      );
+      out.push(
+        paint(
+          `  Your edits now win — upgrades will leave this file alone. Use \`agentcohort reset ${label}\` to revert to the bundled body.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-exists':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-exists', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ A file already exists at ${result.installedPath}.`,
+          'red'
+        )
+      );
+      out.push(
+        paint(
+          `    Pass --force to overwrite it (no backup unless --backup), or remove it manually first.`,
+          'gray'
+        )
+      );
+      break;
+    case 'refused-bundled':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-bundled', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ '${result.name}' is the name of a bundled ${result.kind}. Pick a different name, or pass --override to scaffold a local copy that wins over the bundled body.`,
+          'red'
+        )
+      );
+      break;
+    case 'refused-invalid-name':
+      out.push(
+        paint(head, 'bold') +
+          '  ' +
+          label +
+          '  ' +
+          paint('refused-invalid-name', 'red')
+      );
+      out.push(
+        paint(
+          `  ✗ '${result.name}' is not a valid file name. Use lowercase letters, digits, and hyphens (must start with a letter or digit).`,
+          'red'
+        )
+      );
+      break;
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatAddPreview(preview: AddResult): string {
+  const out: string[] = [];
+  const label = `${preview.kind}/${preview.name}`;
+  out.push(paint('About to add:', 'bold') + '  ' + label);
+  out.push(paint(`  Target: ${preview.installedPath}`, 'gray'));
+  if (preview.disposition === 'override-created') {
+    out.push(
+      paint(
+        `  This is a local copy of the bundled ${preview.kind} '${preview.name}'.`,
+        'gray'
+      )
+    );
+  } else if (preview.kind === 'agent' && preview.archetype) {
+    out.push(paint(`  Archetype: ${preview.archetype}`, 'gray'));
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatExportSummary(result: ExportResult): string {
+  const out: string[] = [];
+  if (result.exitCode === 1) {
+    out.push(
+      paint(
+        'Nothing to export — no `_agentcohort_local: true` files and no `.agentcohort.json` found.',
+        'gray'
+      )
+    );
+    return out.join('\n') + '\n';
+  }
+  const head = result.outPath
+    ? `${paint('exported', 'bold', 'green')} → ${result.outPath}`
+    : paint('exported (stdout)', 'bold', 'green');
+  out.push(head);
+  out.push(
+    paint(
+      `  ${result.fileCount} local file(s), config ${
+        result.configIncluded ? 'included' : 'skipped'
+      }, schema v${result.pack.schemaVersion}.`,
+      'gray'
+    )
+  );
+  if (!result.configIncluded) {
+    out.push(
+      paint(
+        '  (Pass without `--no-config` to bundle `.agentcohort.json` too.)',
+        'gray'
+      )
+    );
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportPlan(preview: ImportResult): string {
+  const out: string[] = [];
+  out.push(paint('About to apply pack:', 'bold') + '  ' + preview.packPath);
+  out.push(
+    paint(
+      `  Schema v${preview.packSchemaVersion}, produced by agentcohort ${preview.packAgentcohortVersion}.`,
+      'gray'
+    )
+  );
+  for (const f of preview.files) {
+    out.push('  ' + formatImportFileEntry(f, '[dry-run] '));
+  }
+  if (preview.configHandled !== 'none-in-pack') {
+    const label =
+      preview.configHandled === 'refused-exists'
+        ? paint('refused (exists)', 'red')
+        : preview.configHandled === 'skipped'
+        ? paint('skipped (--no-config)', 'gray')
+        : preview.configHandled === 'written'
+        ? paint('write', 'green')
+        : paint('overwrite', 'yellow');
+    out.push(`  ${label}  ${preview.configPath}`);
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportResult(result: ImportResult): string {
+  const out: string[] = [];
+  const tag = result.dryRun ? '[dry-run] ' : '';
+  const head = result.dryRun ? 'Pack preview' : 'Pack imported';
+  const color = result.exitCode === 0 ? 'green' : 'yellow';
+  out.push(paint(head, 'bold', color) + '  ' + result.packPath);
+  for (const f of result.files) {
+    out.push('  ' + formatImportFileEntry(f, tag));
+  }
+  if (result.configHandled !== 'none-in-pack') {
+    const target = result.configPath ?? '(unknown)';
+    const label = {
+      written: paint('config written', 'green'),
+      overwritten: paint('config overwritten', 'yellow'),
+      'refused-exists': paint('config refused (exists — pass --force)', 'red'),
+      skipped: paint('config skipped (--no-config)', 'gray'),
+      'none-in-pack': '',
+    }[result.configHandled];
+    out.push(`  ${tag}${label}  ${target}`);
+    if (result.configBackupPath) {
+      out.push(paint(`    (backup: ${result.configBackupPath})`, 'gray'));
+    }
+  }
+  // Footer.
+  const created = result.files.filter((f) => f.disposition === 'created').length;
+  const overwritten = result.files.filter((f) => f.disposition === 'overwritten').length;
+  const refused = result.files.filter((f) => f.disposition.startsWith('refused-')).length;
+  const segs: string[] = [];
+  if (created > 0) segs.push(`${created} created`);
+  if (overwritten > 0) segs.push(`${overwritten} overwritten`);
+  if (refused > 0) segs.push(paint(`${refused} refused`, 'red'));
+  if (segs.length > 0) out.push(paint(`Summary: ${segs.join(' · ')}`, 'bold'));
+  if (refused > 0) {
+    out.push(
+      paint(
+        '  Re-run with --force (and optionally --backup) to overwrite existing local files.',
+        'gray'
+      )
+    );
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatImportFileEntry(f: ImportFileEntry, tag: string): string {
+  const label = `${f.kind}/${f.name}`;
+  const kindTag = f.isOverride ? paint('[override]', 'cyan') : paint('[local]', 'cyan');
+  const dispColor =
+    f.disposition === 'created'
+      ? 'green'
+      : f.disposition === 'overwritten'
+      ? 'yellow'
+      : 'red';
+  const disp = paint(f.disposition, dispColor);
+  const bk = f.backupPath ? paint(`  (backup: ${f.backupPath})`, 'gray') : '';
+  return `${tag}${disp}  ${kindTag} ${label}  → ${f.installedPath}${bk}`;
+}
+
+const DIFF_STATUS_COLOR: Record<DiffStatus, 'green' | 'yellow' | 'red' | 'gray' | 'cyan'> = {
   unchanged: 'green',
   outdated: 'yellow',
   'user-edited': 'yellow',
   unstamped: 'yellow',
   missing: 'red',
   extra: 'gray',
+  local: 'cyan',
+  'local-override': 'cyan',
 };
 
 function formatDiffResult(result: DiffResult): string {
@@ -1313,6 +1876,30 @@ function formatDiffEntry(f: DiffFileEntry): string {
         `  (installed locally but not part of the bundled set — nothing to diff against)`,
         'gray'
       ) +
+      '\n'
+    );
+  }
+  if (f.status === 'local') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  (user-authored file with no bundled equivalent — nothing to diff against)`,
+        'gray'
+      ) +
+      '\n'
+    );
+  }
+  if (f.status === 'local-override') {
+    return (
+      head +
+      '\n' +
+      paint(
+        `  This is a local override — the diff below shows what your customization changed from the bundled body.`,
+        'gray'
+      ) +
+      '\n' +
+      colorizeDiff(f.diff) +
       '\n'
     );
   }

@@ -424,6 +424,130 @@ agentcohort uninstall --yes            # skip the confirm (non-interactive ok)
 Override either with `--keep-claude-md` / `--remove-config` /
 `--keep-config`.
 
+### Add a custom agent or command — `agentcohort add <name>`
+
+Scaffold a new user-authored agent or slash command. The file is
+marked with `_agentcohort_local: true` in its YAML frontmatter so
+future `agentcohort upgrade` runs leave it alone.
+
+```bash
+# New agent — kind picks the scaffold (analyst | implementer | reviewer | gate | empty)
+agentcohort add my-domain-expert --kind=analyst --description="Billing-domain expert" --model=opus
+
+# New slash command
+agentcohort add command/my-flow --description="Custom workflow for nightly builds"
+
+# Override a bundled agent — copies the bundled body verbatim and marks it local
+agentcohort add bug-hunter --override
+```
+
+Disambiguating prefixes: `agent/<name>` and `command/<name>` (bare
+name defaults to `agent`).
+
+| Disposition | Meaning |
+|---|---|
+| `created` | new local file written |
+| `override-created` | bundled file with same name was copied + marked local |
+| `refused-bundled` | bundled `<name>` exists; pass `--override` to make a local copy |
+| `refused-exists` | a file already sits at the target path; pass `--force` (or remove it manually) |
+| `refused-invalid-name` | name must be lowercase letters, digits, hyphens (must start with a letter or digit) |
+
+Behavior notes:
+
+- **Always interactive by default.** Confirms before writing. Pass
+  `--yes` (or `--force`) to skip; in non-interactive contexts (CI,
+  pipes), `add` refuses without explicit consent.
+- **`--dry-run` previews** the exact body that would be written,
+  without touching the filesystem. Combine with `--json` for
+  machine-readable preview.
+- **CLAUDE.md is NOT auto-edited.** If you want the dispatcher in
+  `/auto-flow` to know about your new agent, add a routing rule
+  manually under `# Agentcohort Routing Rules` in your CLAUDE.md.
+- **Override semantics:** `--override` is a one-shot snapshot. If
+  the bundled body changes in a later `agentcohort upgrade`, your
+  local copy is **untouched** — that's the whole point of marking
+  it local. To pull bundled improvements back in, use
+  `agentcohort reset <name>` (which reverts the local override).
+- **Overriding an existing install:** the first time you override a
+  bundled agent after `init`, an installed copy already sits at the
+  target path — pass `--override --force` to authorize replacing
+  that bundled-installed copy with the local one.
+
+### Share customizations across projects — `agentcohort export` / `import`
+
+Bundle every local file (`add` / `add --override` output) plus
+`.agentcohort.json` into a portable JSON pack, then restore it in a
+different project:
+
+```bash
+# Source project — write to a file
+agentcohort export --out=team-pack.json
+
+# Or write to stdout for piping (summary goes to stderr)
+agentcohort export > team-pack.json
+
+# Skip the config (model tiers / gates) if you don't want to share it
+agentcohort export --out=team-pack.json --no-config
+
+# Destination project — preview, then apply
+agentcohort import team-pack.json --dry-run
+agentcohort import team-pack.json --yes
+
+# Overwrite existing local files (with optional backup)
+agentcohort import team-pack.json --force --backup
+```
+
+What goes in the pack:
+
+- **All local agents + commands** — every file under `.claude/` that
+  carries `_agentcohort_local: true`. Both local-new (your custom
+  agents) and local-override (your tweaks to bundled agents) ship.
+- **`.agentcohort.json`** — model tier strategy + gate modes. Use
+  `--no-config` to omit it.
+- **What does NOT ship**: bundled files you hand-edited without
+  marking local. Those are "drift" — use `agentcohort add --override`
+  to mark them as intentional customizations first, then export.
+
+| Disposition | Meaning |
+|---|---|
+| `created` | new local file written to the destination |
+| `overwritten` | existing local file replaced (with `--force`) |
+| `refused-exists` | a file already sits at the target path; re-run with `--force` |
+
+Pack format (`schemaVersion: 1`):
+
+```json
+{
+  "schemaVersion": 1,
+  "agentcohort": "0.8.0",
+  "exportedAt": "2026-05-22T12:00:00.000Z",
+  "config": { "version": 1, "models": { ... }, "gates": { ... } },
+  "files": [
+    { "kind": "agent",   "name": "my-expert",  "isOverride": false, "content": "..." },
+    { "kind": "agent",   "name": "bug-hunter", "isOverride": true,  "content": "..." },
+    { "kind": "command", "name": "my-flow",    "isOverride": false, "content": "..." }
+  ]
+}
+```
+
+The pack is plain JSON — `cat | jq` away from being inspectable.
+No new runtime dependencies are added.
+
+### How local files are treated by the rest of the CLI
+
+The `_agentcohort_local: true` marker is the single source of truth.
+Every command respects it consistently:
+
+| Command | Behavior on a marked file |
+|---|---|
+| `agentcohort list` | `[local]` status (no bundled equivalent) or `[local-override]` (same name as a bundled file) |
+| `agentcohort doctor` | Listed under a `local` check (informational, never a warning) |
+| `agentcohort show <name>` | Banner reads `integrity: local (user-authored — upgrade leaves it alone)` |
+| `agentcohort diff <name>` | Local-new: empty diff (nothing to compare). Local-override: shows what your override changed from bundled. |
+| `agentcohort upgrade` | Disposition `kept-local` — never overwritten, never prompted |
+| `agentcohort reset <name>` | Local-override: reverts to bundled body (`Was: local-override`). Local-new: `refused-local-new` — there is no bundled to revert to |
+| `agentcohort uninstall` | `kept-user-file` for both local-new and local-override — user-authored content is never deleted |
+
 ### Shell completion — `agentcohort completion <shell>`
 
 Tab-complete subcommands, `list` scopes, shell names, and the agent /
@@ -636,6 +760,19 @@ runs.
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
+| `agentcohort add <name>` | **Mutating** — scaffold a new user-authored agent or command marked `_agentcohort_local: true` (so `upgrade` leaves it alone). Defaults to `agent`; use `command/<name>` for commands. |
+| `agentcohort add <name> --kind=<archetype>` | Agent archetype: `analyst` / `implementer` / `reviewer` / `gate` / `empty` (default `empty`). |
+| `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |
+| `agentcohort add <name> --override` | Allow scaffolding a local copy of a bundled file with the same name (your edits win over the bundled body). |
+| `agentcohort add <name> --dry-run \| --yes \| --force` | Preview / skip prompt / overwrite an existing file at the target path. |
+| `agentcohort export` | **Read-only** — bundle every local file + `.agentcohort.json` into a portable pack on stdout (machine-readable JSON; human summary to stderr). |
+| `agentcohort export --out=<path>` | Write the pack to a file instead of stdout. |
+| `agentcohort export --no-config` | Exclude `.agentcohort.json` from the pack. |
+| `agentcohort export --json` | Emit the export result (paths + counts) as JSON. |
+| `agentcohort import <pack>` | **Mutating** — apply a pack produced by `export`. Creates local files + `.agentcohort.json`. Refuses to overwrite existing files unless `--force`. |
+| `agentcohort import <pack> --force --backup` | Overwrite existing local files and `.agentcohort.json`, keeping `.backup-YYYYMMDD-HHMMSS` copies. |
+| `agentcohort import <pack> --no-config` | Skip the `.agentcohort.json` in the pack. |
+| `agentcohort import <pack> --dry-run \| --yes` | Preview / skip the interactive confirm. |
 | `agentcohort upgrade` | Sync `.claude/` templates and the CLAUDE.md routing section to the bundled version. Auto-refreshes outdated files; prompts (keep / overwrite / backup + overwrite / diff) on any file the user has edited. Preserves `.agentcohort.json`. |
 | `agentcohort upgrade --dry-run` | Show what would change without writing. |
 | `agentcohort upgrade --diff` | Print the unified diff of every file that would be refreshed, overwritten, or kept (in addition to the resolver's interactive diff). |
