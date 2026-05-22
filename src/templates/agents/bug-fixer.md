@@ -1,7 +1,7 @@
 ---
 name: bug-fixer
 description: Implement an APPROVED bug fix at the root cause — not the symptom. Stays strictly within the approved issue, adds tests if needed, never touches unapproved problems.
-tools: Read, Glob, Grep, Edit, Write, Bash
+tools: Read, Glob, Grep, Edit, Write, Bash, Skill
 model: sonnet
 ---
 

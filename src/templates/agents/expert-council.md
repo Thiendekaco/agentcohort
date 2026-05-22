@@ -1,7 +1,7 @@
 ---
 name: expert-council
 description: A panel of senior leaders (CTO strategist, QA/QC, DevOps/Reliability, Architect) convened BEFORE fixing a large or complex issue. Reviews root cause, proposes multiple solutions with trade-offs, recommends one. Never implements.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 model: opus
 ---
 

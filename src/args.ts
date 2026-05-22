@@ -255,6 +255,12 @@ ${b('COMMANDS')}
                        Pass \`--override\` to scaffold a local copy of
                        a same-named bundled file (your edits then win
                        over the bundled body).
+  skills               Read-only. Detect Claude Code skills installed
+                       in this environment (user / plugin / project
+                       scope) and list them with their descriptions.
+                       Used by \`init\` (PR2) to bake the skill list
+                       into each agent's boot directive so the
+                       subagent can invoke skills via the Skill tool.
   export               Read-only. Bundle every local file (\`add\` /
                        \`add --override\` output) plus \`.agentcohort.json\`
                        into a portable JSON pack. With \`--out=<path>\`

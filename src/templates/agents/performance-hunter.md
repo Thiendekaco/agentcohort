@@ -1,7 +1,7 @@
 ---
 name: performance-hunter
 description: Find the real performance bottleneck with measurement and evidence — not guesses. Distinguishes measured fact from hypothesis and prioritizes by impact. Never optimizes blindly.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 

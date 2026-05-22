@@ -1,7 +1,7 @@
 ---
 name: solution-architect
 description: Lock in the architecture for a non-trivial or architecture-sensitive change. Defines module boundaries, protects API/data contracts, evaluates trade-offs, and chooses an approach with explicit reasoning. Does not write code.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 model: opus
 ---
 

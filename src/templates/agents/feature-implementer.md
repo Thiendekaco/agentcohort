@@ -1,7 +1,7 @@
 ---
 name: feature-implementer
 description: Execute an approved plan with the smallest correct, production-grade change. Adds focused tests, runs targeted verification, never expands scope.
-tools: Read, Glob, Grep, Edit, Write, Bash
+tools: Read, Glob, Grep, Edit, Write, Bash, Skill
 model: sonnet
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: feature-planner
 description: Turn a requirement or architecture decision into a precise, bite-sized implementation checklist — exact files to touch, exact tests to add, exact verification commands. Does not write code.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 model: sonnet
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: bug-hunter
 description: Sweep the code for existing and latent bugs — suspicious flows, edge cases, validation gaps, async/race conditions, integration risks. Catalogs findings with evidence. Never fixes anything.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 

@@ -59,6 +59,7 @@ import {
   ImportFileEntry,
   PackValidationError,
 } from './pack';
+import { scanSkills, Skill, SkillsScanResult } from './skills';
 import {
   buildContext as buildCompletionContext,
   generateCompletion,
@@ -155,7 +156,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'completion' &&
     args.command !== 'add' &&
     args.command !== 'export' &&
-    args.command !== 'import'
+    args.command !== 'import' &&
+    args.command !== 'skills'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -397,6 +399,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 130;
       }
       process.stderr.write(paint(`✗ uninstall: ${message}\n`, 'red'));
+      return 2;
+    }
+  }
+
+  if (args.command === 'skills') {
+    try {
+      const result = scanSkills({ cwd: process.cwd() });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatSkillsReport(result));
+      }
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(paint(`✗ skills: ${message}\n`, 'red'));
       return 2;
     }
   }
@@ -1700,6 +1718,68 @@ function formatAddPreview(preview: AddResult): string {
     );
   } else if (preview.kind === 'agent' && preview.archetype) {
     out.push(paint(`  Archetype: ${preview.archetype}`, 'gray'));
+  }
+  return out.join('\n') + '\n';
+}
+
+function formatSkillsReport(result: SkillsScanResult): string {
+  const out: string[] = [];
+  if (result.skills.length === 0) {
+    out.push(paint('No Claude Code skills detected.', 'gray'));
+    if (result.searchedRoots.length === 0) {
+      out.push(
+        paint(
+          '  (Searched: ~/.claude/skills, ~/.claude/plugins/*/skills, ./.claude/skills — none exist.)',
+          'gray'
+        )
+      );
+    } else {
+      out.push(
+        paint(
+          `  (Searched ${result.searchedRoots.length} root(s); ${result.invalidCount} dir(s) had no readable SKILL.md.)`,
+          'gray'
+        )
+      );
+    }
+    return out.join('\n') + '\n';
+  }
+  out.push(
+    paint(`${result.skills.length} skill(s) detected`, 'bold') +
+      (result.invalidCount > 0
+        ? paint(`  (+${result.invalidCount} invalid dir(s) skipped)`, 'gray')
+        : '')
+  );
+  // Group by scope for readability.
+  const groups: Array<{ label: string; skills: Skill[] }> = [];
+  const userSkills = result.skills.filter((s) => s.scope === 'user');
+  if (userSkills.length > 0) groups.push({ label: 'user', skills: userSkills });
+  const byPlugin = new Map<string, Skill[]>();
+  for (const s of result.skills) {
+    if (s.scope !== 'plugin') continue;
+    const arr = byPlugin.get(s.pluginName!) ?? [];
+    arr.push(s);
+    byPlugin.set(s.pluginName!, arr);
+  }
+  for (const [plugin, list] of [...byPlugin.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0])
+  )) {
+    groups.push({ label: `plugin: ${plugin}`, skills: list });
+  }
+  const projSkills = result.skills.filter((s) => s.scope === 'project');
+  if (projSkills.length > 0)
+    groups.push({ label: 'project', skills: projSkills });
+
+  const nameW = Math.max(...result.skills.map((s) => s.name.length), 12);
+  for (const g of groups) {
+    out.push('');
+    out.push(paint(`[${g.label}]`, 'cyan'));
+    for (const s of g.skills) {
+      const extras = s.hasExtras ? paint('  +extras', 'gray') : '';
+      out.push(`  ${pad(s.name, nameW)}${extras}`);
+      if (s.description !== '') {
+        out.push(paint(`    └─ ${truncate(s.description, 90)}`, 'gray'));
+      }
+    }
   }
   return out.join('\n') + '\n';
 }

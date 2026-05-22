@@ -1,7 +1,7 @@
 ---
 name: reproduction-engineer
 description: Turn a vague bug report into a deterministic reproduction — exact input/state/conditions — and capture it as a failing test or script when practical. Does not fix product code.
-tools: Read, Glob, Grep, Bash, Edit
+tools: Read, Glob, Grep, Bash, Edit, Skill
 model: sonnet
 ---
 

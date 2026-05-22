@@ -1,7 +1,7 @@
 ---
 name: dispatcher
 description: Read-only task classifier. Reads the user's request, classifies it into a routing tier (0–4), and emits a concrete execution plan the user must approve before any work begins. Never edits code, never spawns the downstream pipeline itself.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 model: haiku
 ---
 

@@ -300,6 +300,21 @@ describe('parseArgs — add command + value flags', () => {
   });
 });
 
+describe('parseArgs — skills command', () => {
+  it('parses bare `skills` as a command', () => {
+    const a = parseArgs(['skills']);
+    expect(a.command).toBe('skills');
+    expect(a.subcommand).toBeNull();
+    expect(a.unknown).toEqual([]);
+  });
+
+  it('parses `skills --json`', () => {
+    const a = parseArgs(['skills', '--json']);
+    expect(a.command).toBe('skills');
+    expect(a.json).toBe(true);
+  });
+});
+
 describe('parseArgs — export / import commands', () => {
   it('parses `export` with no subcommand', () => {
     const a = parseArgs(['export']);
