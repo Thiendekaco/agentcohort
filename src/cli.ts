@@ -169,6 +169,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const report = runDoctor({
         cwd: process.cwd(),
         templatesDir: getTemplatesDir(),
+        skills: scanSkills({ cwd: process.cwd() }).skills,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
@@ -243,6 +244,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         cwd: process.cwd(),
         templatesDir: getTemplatesDir(),
         scope,
+        skills: scanSkills({ cwd: process.cwd() }).skills,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
@@ -705,6 +707,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     const cwd = process.cwd();
     const existingConfig = loadConfig(cwd);
     const models = resolveModels(existingConfig);
+    const skills = scanSkills({ cwd }).skills;
     const stdinTTY = Boolean(process.stdin.isTTY);
     const stdoutTTY = Boolean(process.stdout.isTTY);
     const interactive =
@@ -719,6 +722,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         dryRun: true,
         backup: args.backup,
         models,
+        skills,
       });
       const isMutating =
         preview.action.disposition === 'reset' ||
@@ -772,6 +776,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         dryRun: false,
         backup: args.backup,
         models,
+        skills,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -811,6 +816,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         query: args.subcommand,
         scope,
         models,
+        skills: scanSkills({ cwd: process.cwd() }).skills,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -899,6 +905,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         query,
         variant,
         models,
+        skills: scanSkills({ cwd: process.cwd() }).skills,
       });
       if (args.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -923,6 +930,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     // Read existing config silently — upgrade never re-prompts for it.
     const existingConfig = loadConfig(cwd);
     const models = resolveModels(existingConfig);
+    const skills = scanSkills({ cwd }).skills;
 
     process.stdout.write(
       paint('\nagentcohort upgrade', 'bold', 'cyan') +
@@ -948,6 +956,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         backup: args.backup,
         interactive,
         models,
+        skills,
         resolver: interactive
           ? (req) => upgradeResolver(req, { showDiff: args.diff })
           : undefined,
@@ -1050,6 +1059,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
 
     if (interactive) resolverHandle = createInteractiveResolver();
+    const skills = scanSkills({ cwd }).skills;
     const result = await runInit({
       cwd,
       yes: args.yes,
@@ -1060,6 +1070,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       resolver: resolverHandle?.resolve,
       logger,
       models,
+      skills,
     });
     printSummary(result);
     return 0;

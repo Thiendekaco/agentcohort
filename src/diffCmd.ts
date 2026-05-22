@@ -5,6 +5,8 @@ import { renderAgentTemplate } from './render';
 import { stampTemplate, compareIntegrity } from './stamp';
 import { unifiedDiff } from './textDiff';
 import { hasLocalMarker } from './localMarker';
+import { injectSkillsList } from './skillsBoot';
+import type { Skill } from './skills';
 
 /**
  * `agentcohort diff` — read-only file-level diff between installed
@@ -74,6 +76,8 @@ export interface DiffOptions {
   query: string | null;
   scope: DiffScope;
   models: ModelsConfig;
+  /** Skills baked into the bundled body (matches install/upgrade output). */
+  skills?: readonly Skill[];
 }
 
 export function runDiff(opts: DiffOptions): DiffResult {
@@ -99,6 +103,7 @@ export function runDiff(opts: DiffOptions): DiffResult {
         templatesDir: opts.templatesDir,
         models: opts.models,
         targetName,
+        skills: opts.skills ?? [],
       })
     );
   }
@@ -158,6 +163,7 @@ function scanKind(args: {
   templatesDir: string;
   models: ModelsConfig;
   targetName: string | null;
+  skills: readonly Skill[];
 }): DiffFileEntry[] {
   const subdir = args.kind === 'agent' ? 'agents' : 'commands';
   const installedDir = join(args.cwd, '.claude', subdir);
@@ -185,6 +191,7 @@ function scanKind(args: {
         installedExists: installedFiles.has(f),
         bundledExists: bundledFiles.has(f),
         models: args.models,
+        skills: args.skills,
       })
     );
   }
@@ -200,6 +207,7 @@ function buildEntry(args: {
   installedExists: boolean;
   bundledExists: boolean;
   models: ModelsConfig;
+  skills: readonly Skill[];
 }): DiffFileEntry {
   const installedPath = join(args.installedDir, args.filename);
   const bundledPath = join(args.bundledDir, args.filename);
@@ -209,8 +217,11 @@ function buildEntry(args: {
   let bundledRenderedStamped = '';
   if (args.bundledExists) {
     const raw = readFileSync(bundledPath, 'utf8');
-    const rendered =
+    let rendered =
       args.kind === 'agent' ? renderAgentTemplate(raw, args.models) : raw;
+    if (args.kind === 'agent') {
+      rendered = injectSkillsList(rendered, args.skills);
+    }
     bundledRenderedStamped = stampTemplate(rendered);
   }
   const installed = args.installedExists

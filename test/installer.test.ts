@@ -394,3 +394,113 @@ describe('runInit - CLAUDE.md handling', () => {
     expect(rec.disposition).toBe('unchanged');
   });
 });
+
+describe('runInit — skill injection into boot directive', () => {
+  it('bakes the skill list into every installed agent when skills is provided', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'af-init-skills-'));
+    try {
+      await runInit({
+        cwd,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 25, 12, 0, 0),
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+        skills: [
+          {
+            name: 'superpowers:systematic-debugging',
+            description: 'Iron Law: no fixes without root cause',
+            scope: 'plugin',
+            pluginName: 'superpowers',
+            path: '/fake/plugin/path',
+            skillMdPath: '/fake/plugin/path/SKILL.md',
+            hasExtras: true,
+          },
+          {
+            name: 'investigate',
+            description: 'Systematic debugging with root cause investigation',
+            scope: 'user',
+            path: '/fake/user/path',
+            skillMdPath: '/fake/user/path/SKILL.md',
+            hasExtras: false,
+          },
+        ],
+      });
+      const body = readFileSync(
+        join(cwd, '.claude', 'agents', 'bug-hunter.md'),
+        'utf8'
+      );
+      expect(body).toContain('Skills installed in this environment');
+      expect(body).toContain('`superpowers:systematic-debugging`');
+      expect(body).toContain('`investigate`');
+      // Boot directive markers intact.
+      expect(body).toContain('<!-- agentcohort-skills-start -->');
+      expect(body).toContain('<!-- agentcohort-skills-end -->');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the generic fallback when skills is empty (default)', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'af-init-skills-'));
+    try {
+      await runInit({
+        cwd,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 25, 12, 0, 0),
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+        skills: [],
+      });
+      const body = readFileSync(
+        join(cwd, '.claude', 'agents', 'bug-hunter.md'),
+        'utf8'
+      );
+      expect(body).toContain('Check available skills');
+      expect(body).not.toContain('Skills installed in this environment');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT inject into command files (commands have no boot directive)', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'af-init-skills-'));
+    try {
+      await runInit({
+        cwd,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 25, 12, 0, 0),
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+        skills: [
+          {
+            name: 'should-not-appear',
+            description: 'X',
+            scope: 'user',
+            path: '/x',
+            skillMdPath: '/x/SKILL.md',
+            hasExtras: false,
+          },
+        ],
+      });
+      const body = readFileSync(
+        join(cwd, '.claude', 'commands', 'auto-flow.md'),
+        'utf8'
+      );
+      expect(body).not.toContain('should-not-appear');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
