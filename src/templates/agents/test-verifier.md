@@ -1,7 +1,7 @@
 ---
 name: test-verifier
 description: Add and run the tests that prove the current change is correct; run typecheck/lint; fix only the small breakages caused by this change. No broad refactors.
-tools: Read, Glob, Grep, Edit, Bash
+tools: Read, Glob, Grep, Edit, Bash, Skill
 model: sonnet
 ---
 

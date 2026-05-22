@@ -473,6 +473,59 @@ Behavior notes:
   target path — pass `--override --force` to authorize replacing
   that bundled-installed copy with the local one.
 
+### Skills integration — `agentcohort skills`
+
+Claude Code now ships a Skills system (`superpowers:*`, `caveman-*`,
+`investigate`, `review`, ...). agentcohort detects them so its
+bundled agents can invoke them at runtime via the `Skill` tool —
+skill content (including `references/` and scripts) runs in the
+subagent's context on the agent's configured model tier.
+
+```bash
+agentcohort skills              # detect + list (text)
+agentcohort skills --json       # machine-readable
+```
+
+Sample output:
+
+```
+38 skill(s) detected
+
+[user]
+  caveman-commit
+    └─ Ultra-compressed commit message generator. Cuts noise from commit messages...
+  investigate
+    └─ Systematic debugging with root cause investigation. Four phases...
+
+[plugin: superpowers]
+  superpowers:systematic-debugging
+    └─ Use when encountering any bug, test failure, or unexpected behavior...
+  superpowers:test-driven-development
+    └─ Use when implementing any feature or bugfix, before writing implementation code
+
+[project]
+  my-project-skill
+    └─ ...
+```
+
+Discovery scopes:
+
+| Scope | Path |
+|---|---|
+| `user` | `~/.claude/skills/<name>/SKILL.md` |
+| `plugin` | `~/.claude/plugins/<plugin>/skills/<name>/SKILL.md` |
+| `project` | `<cwd>/.claude/skills/<name>/SKILL.md` |
+
+Plugin-scope skills get a `<plugin>:<name>` qualified name (matches
+how Claude Code surfaces them). User and project skills use the bare
+name.
+
+This release also adds `Skill` to the `tools:` whitelist of every
+bundled agent — so each agent CAN invoke skills when appropriate.
+The next release (v0.10) wires the detected skill list into agent
+boot directives at `init` time, so each subagent knows what's
+available without the orchestrator forwarding the list.
+
 ### Share customizations across projects — `agentcohort export` / `import`
 
 Bundle every local file (`add` / `add --override` output) plus
@@ -760,6 +813,8 @@ runs.
 | `agentcohort uninstall --remove-config \| --keep-config` | Explicit config decision (default: keep). |
 | `agentcohort uninstall --yes \| --force` | Skip the interactive confirm. |
 | `agentcohort completion bash \| zsh \| pwsh` | Emit a shell completion script. Pipe to your shell config; re-run after package upgrades to refresh baked-in names. |
+| `agentcohort skills` | **Read-only** — detect Claude Code skills installed in user / plugin / project scope. Lists each with its description. Used by `init` (next release) to bake the skill list into agent boot directives. |
+| `agentcohort skills --json` | Same data, machine-readable JSON output. |
 | `agentcohort add <name>` | **Mutating** — scaffold a new user-authored agent or command marked `_agentcohort_local: true` (so `upgrade` leaves it alone). Defaults to `agent`; use `command/<name>` for commands. |
 | `agentcohort add <name> --kind=<archetype>` | Agent archetype: `analyst` / `implementer` / `reviewer` / `gate` / `empty` (default `empty`). |
 | `agentcohort add <name> --description=<txt> --model=<tier>` | Override the default `description:` / `model:` (`haiku` / `sonnet` / `opus`) in the scaffold. |

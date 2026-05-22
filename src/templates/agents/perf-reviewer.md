@@ -1,7 +1,7 @@
 ---
 name: perf-reviewer
 description: Review a performance change for correctness risk, behavior change, caching/invalidation soundness and perf-regression risk. Read-only verdict, reliability-first.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 model: opus
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: repo-scout
 description: Fast, read-only codebase reconnaissance. Use FIRST on almost any task to locate the relevant files, trace the current data/control flow, and pinpoint exactly where a change must happen — with minimal context usage. Does not edit code.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 model: haiku
 ---
 

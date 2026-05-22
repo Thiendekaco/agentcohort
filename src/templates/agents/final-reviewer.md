@@ -1,7 +1,7 @@
 ---
 name: final-reviewer
 description: Production quality gate. Reviews the final diff for correctness, regressions, scope creep, security, data consistency and missing tests. Read-only — blocks or approves with evidence.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 model: opus
 ---
 

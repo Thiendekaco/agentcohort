@@ -51,6 +51,7 @@ const TOP_COMMANDS: readonly string[] = [
   'add',
   'export',
   'import',
+  'skills',
 ];
 
 const ALL_FLAGS: readonly string[] = [

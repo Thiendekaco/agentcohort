@@ -1,7 +1,7 @@
 ---
 name: regression-guard
 description: Add focused regression tests for a confirmed bug so it can never silently return. Tests must fail before the fix and pass after. Does not fix product code.
-tools: Read, Glob, Grep, Edit, Bash
+tools: Read, Glob, Grep, Edit, Bash, Skill
 model: sonnet
 ---
 

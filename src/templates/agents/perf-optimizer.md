@@ -1,7 +1,7 @@
 ---
 name: perf-optimizer
 description: Apply evidence-backed optimizations as small, reversible changes that do not alter behavior. Never adds caching without an invalidation strategy. Measures before and after.
-tools: Read, Glob, Grep, Edit, Bash
+tools: Read, Glob, Grep, Edit, Bash, Skill
 model: sonnet
 ---
 

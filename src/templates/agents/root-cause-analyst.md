@@ -1,7 +1,7 @@
 ---
 name: root-cause-analyst
 description: Take a confirmed bug from symptom to true root cause and systemic cause. Determines severity and blast radius, proposes quick/robust/long-term corrections with trade-offs. Never fixes.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 model: opus
 ---
 
