@@ -230,8 +230,24 @@ The orchestrator updates the `Gates:` line, re-prints the panel, and
 waits again. Overrides do not modify `.agentcohort.json`.
 
 **Reply contract at a gate.** When a gate fires, the orchestrator
-surfaces the relevant artifact and calls Claude Code's
-**`AskUserQuestion`** tool with three options:
+must print a compact approval summary before calling Claude Code's
+**`AskUserQuestion`** tool. Use this reusable snippet:
+
+```markdown
+### Approval summary — <gate name>
+
+**You are approving:** <specific decision scope>
+**Current conclusion:** <recommended flow / architecture / plan / diagnosis>
+**If approved, Claude will:**
+1. <next step 1>
+2. <next step 2>
+3. <next step 3>
+
+**Not done yet:** <important work not yet performed>
+**Decision needed:** <plain-language approval question>
+```
+
+Then present exactly these three options via `AskUserQuestion`:
 
 - `Approve` — continue to the next stage.
 - `Revise` — collect free-form feedback in a follow-up message, then

@@ -20,7 +20,19 @@ any stage raises a blocker.
    `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
    `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
    STOP and surface the architect's decision (chosen approach + key
-   trade-offs + risks). Then use the **`AskUserQuestion`** tool with:
+   trade-offs + risks).
+
+   ### Approval summary — architect
+   **You are approving:** the proposed architecture before the planner turns it into an implementation checklist.
+   **Current conclusion:** the architect has chosen an approach and identified the key trade-offs and risks for this task.
+   **If approved, Claude will:**
+   1. pass this architecture to `feature-planner`
+   2. build an implementation checklist, tests, and verification around this approach
+   3. stop again at the plan gate before any code is written
+   **Not done yet:** no implementation has started; no files or tests have been changed.
+   **Decision needed:** should Claude use this architecture as the basis for the implementation plan?
+
+   Then use the **`AskUserQuestion`** tool with:
    - `question`: `"Architect verdict — proceed with this approach?"`
    - `header`: `"Architect gate"`
    - `options`:
@@ -37,8 +49,19 @@ any stage raises a blocker.
    checklist with exact files and verification.
 5. **🚦 HUMAN GATE — plan**. Read `.agentcohort.json` for `gates.plan`
    (default `on`). If `on`, OR `auto` AND Tier ≥ 4, STOP and surface the
-   plan (files to touch, tests to add, verification commands). Then
-   use **`AskUserQuestion`** with:
+   plan (files to touch, tests to add, verification commands).
+
+   ### Approval summary — plan
+   **You are approving:** the exact implementation checklist before code changes begin.
+   **Current conclusion:** the planner has identified the files to touch, tests to add, and verification commands to run.
+   **If approved, Claude will:**
+   1. implement exactly this plan
+   2. run the planned tests and verification
+   3. hand the final diff to `final-reviewer`
+   **Not done yet:** code has not been changed yet under this plan.
+   **Decision needed:** should Claude implement this exact plan now?
+
+   Then use **`AskUserQuestion`** with:
    - `question`: `"Plan ready — proceed with implementation?"`
    - `header`: `"Plan gate"`
    - `options`:
