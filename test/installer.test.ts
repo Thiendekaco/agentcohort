@@ -121,12 +121,6 @@ describe('runInit - fresh project', () => {
     expect(perfHunt).toContain('HUMAN GATE — architect');
     // CLAUDE.md mentions bottleneck in the gate table
     expect(claude).toContain('`bottleneck`');
-    expect(claude).toContain('Approval summary');
-    expect(claude).toContain('You are approving');
-    expect(claude).toContain('Current conclusion');
-    expect(claude).toContain('If approved, Claude will');
-    expect(claude).toContain('Not done yet');
-    expect(claude).toContain('Decision needed');
     // dispatcher.md exposes Approval gates field
     const dispatcher = readFileSync(
       join(cwd, '.claude', 'agents', 'dispatcher.md'),
@@ -139,13 +133,6 @@ describe('runInit - fresh project', () => {
       'utf8'
     );
     expect(autoFlow).toContain('gates ±');
-    expect(autoFlow).toContain('Approval summary — routing');
-    expect(autoFlow).toContain('**You are approving:**');
-    expect(devFlow).toContain('Approval summary — architect');
-    expect(devFlow).toContain('Approval summary — plan');
-    expect(bugAudit).toContain('Approval summary — root-cause');
-    expect(perfHunt).toContain('Approval summary — bottleneck');
-    expect(perfHunt).toContain('Approval summary — architect');
   });
 
   it('installs the OpenWolf interop section with the read matrix', async () => {

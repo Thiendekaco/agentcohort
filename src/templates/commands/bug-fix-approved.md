@@ -12,11 +12,8 @@ approach must be stated in `$ARGUMENTS`.
 ## Pre-flight
 
 If `$ARGUMENTS` does not clearly contain (a) the specific approved issue and
-(b) the approved fix approach, **stop and ask** with a concise approval summary
-that restates the missing approved scope, what fix Claude would apply if
-clarified, and that no code will change until the approved issue and approved
-approach are explicit. Do not guess. Do not fix anything that was not explicitly
-approved.
+(b) the approved fix approach, **stop and ask** — do not guess. Do not fix
+anything that was not explicitly approved.
 
 ## Pipeline
 

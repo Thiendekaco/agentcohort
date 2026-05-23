@@ -27,21 +27,6 @@ Print the dispatcher's short recommendation block (`Recommended` /
 agent roster, do not re-introduce the old `Classification / Pipeline /
 Agents / Skipping / Next step` lines.
 
-### Approval summary — routing
-
-**You are approving:** whether to enter the recommended workflow for this task.
-
-**Current conclusion:** the dispatcher recommends <recommended slash command> for the current request because of the reported scope and escalation signals.
-
-**If approved, Claude will:**
-1. run the recommended workflow from Step 3
-2. carry the dispatcher's tier and gate decisions into that workflow
-3. stop again at any configured human gate inside the downstream flow
-
-**Not done yet:** no downstream workflow has started; no code has been changed.
-
-**Decision needed:** should Claude enter <recommended slash command> now, or should the workflow be changed?
-
 Then use the **`AskUserQuestion`** tool to surface the approval gate:
 
 - `question`: `"<recommended slash command> — proceed?"` (interpolate
