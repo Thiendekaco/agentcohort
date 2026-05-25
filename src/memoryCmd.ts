@@ -11,7 +11,7 @@ import {
   Source,
 } from './memorySchema';
 import { scanForSecrets, MatchedSecret } from './memorySecretGuard';
-import { appendJsonl } from './memoryIo';
+import { appendJsonl, readJsonl } from './memoryIo';
 
 // ============================================================================
 // memory init
@@ -212,3 +212,102 @@ function currentCommit(cwd: string): string | null {
     return null;
   } catch { return null; }
 }
+
+// ============================================================================
+// memory read
+// ============================================================================
+
+export interface MemoryReadOptions {
+  cwd: string;
+  collection: string;
+  filters?: Record<string, string>;
+  limit?: number;
+  since?: string;
+  runId?: string;
+  withVerifications?: boolean;
+}
+
+export interface MemoryReadResult { entries: unknown[]; }
+
+export function runMemoryRead(opts: MemoryReadOptions): MemoryReadResult {
+  if (!(COLLECTION_NAMES as readonly string[]).includes(opts.collection)) {
+    throw new Error(`unknown collection: ${opts.collection}`);
+  }
+  const collection = opts.collection as CollectionName;
+  const path = pathFor(opts.cwd, collection, opts.runId);
+  let entries = readJsonl<Record<string, any>>(path);
+
+  // Filters (top-level field or body.field via dotted path)
+  if (opts.filters) {
+    for (const [key, value] of Object.entries(opts.filters)) {
+      entries = entries.filter((e) => readPath(e, key) === coerce(value));
+    }
+  }
+
+  // Since
+  if (opts.since) {
+    const cutoff = Date.now() - parseDuration(opts.since);
+    entries = entries.filter((e) => new Date(e.ts).getTime() >= cutoff);
+  }
+
+  // Run-id filter (does not apply to scratch — scratch is already per-run path)
+  if (opts.runId && collection !== 'scratch') {
+    entries = entries.filter((e) => e.run_id === opts.runId);
+  }
+
+  // Limit — keep LAST N
+  if (opts.limit !== undefined && entries.length > opts.limit) {
+    entries = entries.slice(-opts.limit);
+  }
+
+  // Join verifications (only valid for decisions + bugs)
+  if (opts.withVerifications && (collection === 'decisions' || collection === 'bugs')) {
+    const verifs = readJsonl<Record<string, any>>(
+      pathFor(opts.cwd, 'verifications'),
+    );
+    const byTarget = new Map<string, Record<string, any>>();
+    for (const v of verifs) {
+      const targetId = v?.body?.target_id;
+      if (typeof targetId === 'string') {
+        const prior = byTarget.get(targetId);
+        if (!prior || new Date(v.ts) > new Date(prior.ts)) {
+          byTarget.set(targetId, v);
+        }
+      }
+    }
+    entries = entries.map((e) => {
+      const v = byTarget.get(e.id);
+      if (!v) return e;
+      return {
+        ...e,
+        _effective_verified: v.body.verified,
+        _verification_evidence: v.body.evidence,
+        _verification_by_stage: v.body.by_stage,
+      };
+    });
+  }
+
+  return { entries };
+}
+
+function readPath(obj: any, path: string): unknown {
+  return path.split('.').reduce((acc: any, k: string) => (acc == null ? undefined : acc[k]), obj);
+}
+
+function coerce(s: string): unknown {
+  if (s === 'true') return true;
+  if (s === 'false') return false;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+  return s;
+}
+
+function parseDuration(s: string): number {
+  const m = /^(\d+)([smhd])$/.exec(s.trim());
+  if (!m) throw new Error(`bad duration: ${s} (expected like 7d, 24h, 30m, 60s)`);
+  const n = Number(m[1]);
+  const unit = m[2] as 's' | 'm' | 'h' | 'd';
+  const map: Record<'s' | 'm' | 'h' | 'd', number> =
+    { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return n * map[unit];
+}
+

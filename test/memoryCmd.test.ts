@@ -54,7 +54,7 @@ describe('runMemoryInit', () => {
   });
 });
 
-import { runMemoryWrite } from '../src/memoryCmd';
+import { runMemoryWrite, runMemoryRead } from '../src/memoryCmd';
 import { v4 as uuidv4 } from 'uuid';
 import { execSync } from 'node:child_process';
 
@@ -143,3 +143,107 @@ describe('runMemoryWrite', () => {
     expect(r.disposition).toBe('rejected-no-run-id');
   });
 });
+
+describe('runMemoryRead', () => {
+  beforeEach(() => {
+    runMemoryInit({ cwd: dir, mode: 'default' });
+    execSync('git init -q', { cwd: dir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: dir });
+  });
+
+  it('returns [] when collection file is missing', () => {
+    const r = runMemoryRead({ cwd: dir, collection: 'decisions' });
+    expect(r.entries).toEqual([]);
+  });
+
+  it('returns entries in insertion order, last N entries when limit applied', () => {
+    for (let i = 0; i < 5; i++) {
+      runMemoryWrite({
+        cwd: dir, collection: 'decisions', source: 'solution-architect',
+        confidence: 1, verified: true,
+        taskSummary: `t${i}`, runId: uuidv4(), files: [],
+        bodyJson: JSON.stringify({
+          approach_chosen: `a${i}`, alternatives_considered: [], trade_offs: '',
+          gate_outcome: 'approved',
+        }),
+      });
+    }
+    const r = runMemoryRead({ cwd: dir, collection: 'decisions', limit: 3 });
+    expect(r.entries.length).toBe(3);
+    expect(r.entries.map((e: any) => e.body.approach_chosen)).toEqual(['a2', 'a3', 'a4']);
+  });
+
+  it('filter=source=human returns only human entries', () => {
+    runMemoryWrite({
+      cwd: dir, collection: 'decisions', source: 'human',
+      confidence: 1, verified: true, taskSummary: 'h', runId: uuidv4(), files: [],
+      bodyJson: JSON.stringify({ approach_chosen: 'h', alternatives_considered: [], trade_offs: '', gate_outcome: 'approved' }),
+    });
+    runMemoryWrite({
+      cwd: dir, collection: 'decisions', source: 'solution-architect',
+      confidence: 1, verified: true, taskSummary: 'a', runId: uuidv4(), files: [],
+      bodyJson: JSON.stringify({ approach_chosen: 'a', alternatives_considered: [], trade_offs: '', gate_outcome: 'approved' }),
+    });
+    const r = runMemoryRead({ cwd: dir, collection: 'decisions', filters: { source: 'human' } });
+    expect(r.entries.length).toBe(1);
+    expect((r.entries[0] as any).source).toBe('human');
+  });
+
+  it('--with-verifications joins latest verification by target_id', () => {
+    const targetRunId = uuidv4();
+    const w = runMemoryWrite({
+      cwd: dir, collection: 'bugs', source: 'bug-fixer',
+      confidence: 0.7, verified: false, taskSummary: 'bug t', runId: targetRunId, files: [],
+      bodyJson: JSON.stringify({
+        symptoms: 'x', root_cause: 'y', fix_summary: 'z',
+        affected_files: [], test_added: null,
+      }),
+    });
+    expect(w.disposition).toBe('written');
+    runMemoryWrite({
+      cwd: dir, collection: 'verifications', source: 'test-verifier',
+      confidence: 1, verified: true, taskSummary: 'verify', runId: targetRunId, files: [],
+      bodyJson: JSON.stringify({
+        target_id: w.entryId, target_collection: 'bugs',
+        verified: true, evidence: 'tests passed', by_stage: 'test-verifier',
+      }),
+    });
+    const r = runMemoryRead({ cwd: dir, collection: 'bugs', withVerifications: true });
+    expect((r.entries[0] as any)._effective_verified).toBe(true);
+    expect((r.entries[0] as any)._verification_evidence).toBe('tests passed');
+  });
+
+  it('--with-verifications uses LATEST verification when multiple exist (refute pattern)', async () => {
+    const targetRunId = uuidv4();
+    const w = runMemoryWrite({
+      cwd: dir, collection: 'bugs', source: 'bug-fixer',
+      confidence: 0.7, verified: false, taskSummary: 'bug', runId: targetRunId, files: [],
+      bodyJson: JSON.stringify({
+        symptoms: 'x', root_cause: 'y', fix_summary: 'z',
+        affected_files: [], test_added: null,
+      }),
+    });
+    runMemoryWrite({
+      cwd: dir, collection: 'verifications', source: 'test-verifier',
+      confidence: 1, verified: true, taskSummary: 'v1', runId: targetRunId, files: [],
+      bodyJson: JSON.stringify({
+        target_id: w.entryId, target_collection: 'bugs',
+        verified: true, evidence: 'first pass', by_stage: 'test-verifier',
+      }),
+    });
+    // Sleep 5ms to ensure ts ordering is deterministic.
+    await new Promise(r => setTimeout(r, 5));
+    runMemoryWrite({
+      cwd: dir, collection: 'verifications', source: 'regression-guard',
+      confidence: 1, verified: true, taskSummary: 'v2', runId: targetRunId, files: [],
+      bodyJson: JSON.stringify({
+        target_id: w.entryId, target_collection: 'bugs',
+        verified: false, evidence: 'regressed later', by_stage: 'regression-guard',
+      }),
+    });
+    const r = runMemoryRead({ cwd: dir, collection: 'bugs', withVerifications: true });
+    expect((r.entries[0] as any)._effective_verified).toBe(false);
+    expect((r.entries[0] as any)._verification_evidence).toBe('regressed later');
+  });
+});
+
