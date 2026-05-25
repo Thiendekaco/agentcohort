@@ -49,6 +49,28 @@ describe('MEMORY_ENTRY_BASE', () => {
       context: { ...validBase.context, commit: 'not-hex' },
     })).toThrow();
   });
+  it('rejects commit hash shorter than 7 chars', () => {
+    expect(() => MEMORY_ENTRY_BASE.parse({
+      ...validBase,
+      context: { ...validBase.context, commit: 'abcdef' }, // 6 chars
+    })).toThrow();
+  });
+  it('rejects commit hash longer than 40 chars', () => {
+    expect(() => MEMORY_ENTRY_BASE.parse({
+      ...validBase,
+      context: { ...validBase.context, commit: 'a'.repeat(41) },
+    })).toThrow();
+  });
+  it('accepts 7 and 40 char commit hashes', () => {
+    expect(() => MEMORY_ENTRY_BASE.parse({
+      ...validBase,
+      context: { ...validBase.context, commit: '1234567' }, // 7 chars
+    })).not.toThrow();
+    expect(() => MEMORY_ENTRY_BASE.parse({
+      ...validBase,
+      context: { ...validBase.context, commit: 'a'.repeat(40) },
+    })).not.toThrow();
+  });
 });
 
 describe('per-collection bodies', () => {
@@ -92,6 +114,40 @@ describe('per-collection bodies', () => {
       gate: 'architect', outcome: 'approved', reason: null,
       proposed_content: 'use Redis', posing_agent: 'solution-architect',
     })).not.toThrow();
+  });
+  it('DECISION_BODY rejects empty approach_chosen', () => {
+    expect(() => DECISION_BODY.parse({
+      approach_chosen: '',
+      alternatives_considered: [], trade_offs: '',
+      gate_outcome: 'approved',
+    })).toThrow();
+  });
+  it('BUG_BODY rejects empty symptoms / root_cause / fix_summary', () => {
+    expect(() => BUG_BODY.parse({
+      symptoms: '', root_cause: 'y', fix_summary: 'z',
+      affected_files: [], test_added: null,
+    })).toThrow();
+    expect(() => BUG_BODY.parse({
+      symptoms: 'x', root_cause: '', fix_summary: 'z',
+      affected_files: [], test_added: null,
+    })).toThrow();
+    expect(() => BUG_BODY.parse({
+      symptoms: 'x', root_cause: 'y', fix_summary: '',
+      affected_files: [], test_added: null,
+    })).toThrow();
+  });
+  it('AUDIT_BODY rejects empty proposed_content', () => {
+    expect(() => AUDIT_BODY.parse({
+      gate: 'architect', outcome: 'approved', reason: null,
+      proposed_content: '', posing_agent: 'solution-architect',
+    })).toThrow();
+  });
+  it('VERIFICATION_BODY rejects empty evidence', () => {
+    expect(() => VERIFICATION_BODY.parse({
+      target_id: '00000000-0000-4000-8000-000000000000',
+      target_collection: 'bugs',
+      verified: true, evidence: '', by_stage: 'test-verifier',
+    })).toThrow();
   });
 });
 

@@ -37,16 +37,16 @@ export type MemoryEntry = z.infer<typeof MEMORY_ENTRY_BASE>;
 // ---- per-collection body schemas -----------------------------------
 
 export const DECISION_BODY = z.object({
-  approach_chosen: z.string(),
+  approach_chosen: z.string().min(1),
   alternatives_considered: z.array(z.string()),
   trade_offs: z.string(),
   gate_outcome: z.enum(['approved', 'rejected', 'escalated', 'auto-skipped']),
 });
 
 export const BUG_BODY = z.object({
-  symptoms: z.string(),
-  root_cause: z.string(),
-  fix_summary: z.string(),
+  symptoms: z.string().min(1),
+  root_cause: z.string().min(1),
+  fix_summary: z.string().min(1),
   affected_files: z.array(z.string()),
   test_added: z.string().nullable(),
 });
@@ -61,7 +61,7 @@ export const AUDIT_BODY = z.object({
   gate: z.enum(['architect', 'plan', 'bottleneck', 'root-cause', 'expert-council']),
   outcome: z.enum(['approved', 'rejected', 'escalated', 'auto-skipped']),
   reason: z.string().max(2000).nullable(),
-  proposed_content: z.string().max(2000),
+  proposed_content: z.string().min(1).max(2000),
   posing_agent: z.string(),
 });
 
@@ -69,7 +69,7 @@ export const VERIFICATION_BODY = z.object({
   target_id: z.string().uuid(),
   target_collection: z.enum(['decisions', 'bugs']),
   verified: z.boolean(),
-  evidence: z.string().max(1000),
+  evidence: z.string().min(1).max(1000),
   by_stage: z.string(),
 });
 
@@ -91,3 +91,10 @@ export function bodySchemaFor(name: CollectionName): z.ZodTypeAny {
     }
   }
 }
+
+// ---- inferred body types (convenience for callers) -----------------
+export type DecisionBody     = z.infer<typeof DECISION_BODY>;
+export type BugBody          = z.infer<typeof BUG_BODY>;
+export type ScratchBody      = z.infer<typeof SCRATCH_BODY>;
+export type AuditBody        = z.infer<typeof AUDIT_BODY>;
+export type VerificationBody = z.infer<typeof VERIFICATION_BODY>;
