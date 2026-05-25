@@ -52,25 +52,48 @@ const LOCK_STALE_MS = 30_000;
 
 export function acquireLock(targetPath: string): LockHandle {
   const lockPath = `${targetPath}.lock`;
-  if (existsSync(lockPath)) {
+  mkdirSync(dirname(lockPath), { recursive: true });
+
+  // wx-first pattern: try to claim the lock atomically. If it already
+  // exists, inspect — reclaim if stale, otherwise refuse. Retry once
+  // after a stale reclaim so we don't recurse.
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const meta = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid: number; ts: number };
-      const age = Date.now() - meta.ts;
-      const alive = isPidAlive(meta.pid);
-      if (alive && age < LOCK_STALE_MS) {
-        throw new Error(`file is locked by pid ${meta.pid} (held ${age}ms)`);
-      }
-      // stale — reclaim
-      unlinkSync(lockPath);
+      writeFileSync(
+        lockPath,
+        JSON.stringify({ pid: process.pid, ts: Date.now() }),
+        { flag: 'wx' },
+      );
+      return { path: targetPath, lockPath };
     } catch (e) {
-      if ((e as Error).message?.includes('locked by pid')) throw e;
-      // malformed lock file — reclaim
-      try { unlinkSync(lockPath); } catch {}
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw e;
+
+      // Lock already exists. Inspect to decide stale-vs-live.
+      let stale = false;
+      try {
+        const meta = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid: number; ts: number };
+        const age = Date.now() - meta.ts;
+        if (isPidAlive(meta.pid) && age < LOCK_STALE_MS) {
+          throw new Error(`file is locked by pid ${meta.pid} (held ${age}ms)`);
+        }
+        stale = true;
+      } catch (parseErr) {
+        if ((parseErr as Error).message?.startsWith('file is locked by pid')) throw parseErr;
+        // Malformed lock file (partial write, garbage) — treat as stale.
+        stale = true;
+      }
+
+      if (stale) {
+        try { unlinkSync(lockPath); } catch { /* another process already reclaimed */ }
+        // Loop and retry the wx write. If yet another process raced us
+        // to the new lock, we'll see EEXIST again and on attempt 2 the
+        // re-inspect will throw a clean "locked by pid X" error.
+        continue;
+      }
     }
   }
-  mkdirSync(dirname(lockPath), { recursive: true });
-  writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: 'wx' });
-  return { path: targetPath, lockPath };
+  throw new Error(`failed to acquire lock at ${lockPath} after 2 attempts (contention)`);
 }
 
 export function releaseLock(handle: LockHandle): void {

@@ -82,6 +82,12 @@ describe('acquireLock / releaseLock', () => {
     const lock = acquireLock(path);
     releaseLock(lock);
   });
+  it('throws clean "locked by pid" error on reclaim race (live holder won)', () => {
+    const path = join(dir, 'col.jsonl');
+    // Pre-write a lock that LOOKS live (current pid + fresh ts)
+    writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+    expect(() => acquireLock(path)).toThrow(/locked by pid/);
+  });
 });
 
 describe('rewriteJsonl', () => {
