@@ -54,7 +54,7 @@ describe('runMemoryInit', () => {
   });
 });
 
-import { runMemoryWrite, runMemoryRead } from '../src/memoryCmd';
+import { runMemoryWrite, runMemoryRead, runMemorySearch } from '../src/memoryCmd';
 import { v4 as uuidv4 } from 'uuid';
 import { execSync } from 'node:child_process';
 
@@ -244,6 +244,50 @@ describe('runMemoryRead', () => {
     const r = runMemoryRead({ cwd: dir, collection: 'bugs', withVerifications: true });
     expect((r.entries[0] as any)._effective_verified).toBe(false);
     expect((r.entries[0] as any)._verification_evidence).toBe('regressed later');
+  });
+});
+
+describe('runMemorySearch', () => {
+  beforeEach(() => {
+    runMemoryInit({ cwd: dir, mode: 'default' });
+    execSync('git init -q', { cwd: dir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: dir });
+    runMemoryWrite({
+      cwd: dir, collection: 'decisions', source: 'solution-architect',
+      confidence: 1, verified: true, taskSummary: 'caching task', runId: uuidv4(), files: [],
+      bodyJson: JSON.stringify({
+        approach_chosen: 'use Redis for caching',
+        alternatives_considered: [], trade_offs: 'lower latency vs infra cost', gate_outcome: 'approved',
+      }),
+    });
+    runMemoryWrite({
+      cwd: dir, collection: 'bugs', source: 'bug-fixer',
+      confidence: 1, verified: true, taskSummary: 'invoice bug', runId: uuidv4(), files: [],
+      bodyJson: JSON.stringify({
+        symptoms: 'off by one in invoice totals',
+        root_cause: 'incl/excl boundary',
+        fix_summary: 'use < instead of <=',
+        affected_files: [], test_added: null,
+      }),
+    });
+  });
+
+  it('finds substring across all collections (excl. scratch)', () => {
+    const r = runMemorySearch({ cwd: dir, query: 'Redis' });
+    expect(r.matches.length).toBe(1);
+    expect(r.matches[0].collection).toBe('decisions');
+  });
+  it('is case-insensitive by default', () => {
+    const r = runMemorySearch({ cwd: dir, query: 'redis' });
+    expect(r.matches.length).toBe(1);
+  });
+  it('--collection scopes the search', () => {
+    const r = runMemorySearch({ cwd: dir, query: 'invoice', collection: 'decisions' });
+    expect(r.matches.length).toBe(0);
+  });
+  it('--regex enables regex mode', () => {
+    const r = runMemorySearch({ cwd: dir, query: '^use\\s+\\w+', regex: true });
+    expect(r.matches.length).toBeGreaterThan(0);
   });
 });
 

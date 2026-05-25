@@ -311,3 +311,66 @@ function parseDuration(s: string): number {
   return n * map[unit];
 }
 
+// ============================================================================
+// memory search
+// ============================================================================
+
+export interface MemorySearchOptions {
+  cwd: string;
+  query: string;
+  collection?: string;
+  regex?: boolean;
+  limit?: number;
+}
+
+export interface MemorySearchMatch {
+  collection: string;
+  entry: Record<string, any>;
+  matchedField: string;
+}
+
+export interface MemorySearchResult { matches: MemorySearchMatch[]; }
+
+export function runMemorySearch(opts: MemorySearchOptions): MemorySearchResult {
+  const scope: CollectionName[] = opts.collection
+    ? [opts.collection as CollectionName]
+    : (COLLECTION_NAMES.filter((c) => c !== 'scratch') as CollectionName[]);
+  const matcher = opts.regex
+    ? buildRegexMatcher(opts.query)
+    : (s: string) => s.toLowerCase().includes(opts.query.toLowerCase());
+
+  const matches: MemorySearchMatch[] = [];
+  for (const collection of scope) {
+    const path = pathFor(opts.cwd, collection);
+    const entries = readJsonl<Record<string, any>>(path);
+    for (const entry of entries) {
+      const hit = findHitField(entry, matcher);
+      if (hit) matches.push({ collection, entry, matchedField: hit });
+      if (opts.limit && matches.length >= opts.limit) break;
+    }
+  }
+  return { matches };
+}
+
+function buildRegexMatcher(pattern: string): (s: string) => boolean {
+  const re = new RegExp(pattern);
+  return (s) => re.test(s);
+}
+
+function findHitField(obj: Record<string, any>, matcher: (s: string) => boolean, prefix = ''): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (typeof v === 'string' && matcher(v)) return path;
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (typeof item === 'string' && matcher(item)) return path;
+      }
+    }
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const nested = findHitField(v, matcher, path);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
