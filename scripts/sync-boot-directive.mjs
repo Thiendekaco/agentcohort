@@ -11,13 +11,22 @@
 // Insertion point is immediately after the YAML frontmatter and before
 // the rest of the agent body. Hand-edited content outside the region is
 // preserved.
+//
+// Memory markers are also rewritten per-agent:
+//
+//   <!-- agentcohort-memory-start -->
+//   ... agent-specific memory affinity section ...
+//   <!-- agentcohort-memory-end -->
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const START = '<!-- boot-directive-start -->';
 const END = '<!-- boot-directive-end -->';
+
+const MEM_START = '<!-- agentcohort-memory-start -->';
+const MEM_END = '<!-- agentcohort-memory-end -->';
 
 /**
  * Split a markdown string into frontmatter and body.
@@ -51,9 +60,30 @@ function escapeRe(s) {
 }
 
 /**
+ * Rewrite the agentcohort-memory-start/end region inside `content`
+ * with the per-agent rendered section from memoryBoot.
+ *
+ * @param {string} content - agent file content after boot-directive sync
+ * @param {string} agentName - e.g. "bug-fixer"
+ * @param {(agent: string, user: undefined) => string} renderFn
+ * @returns {string}
+ */
+function injectMemorySection(content, agentName, renderFn) {
+  const startIdx = content.indexOf(MEM_START);
+  if (startIdx === -1) return content;
+  const endIdx = content.indexOf(MEM_END, startIdx + MEM_START.length);
+  if (endIdx === -1) return content;
+
+  const before = content.slice(0, startIdx);
+  const after = content.slice(endIdx + MEM_END.length);
+  const rendered = renderFn(agentName, undefined);
+  return before + rendered + after;
+}
+
+/**
  * Sync the directive into every .md file under `agentDir`.
  *
- * @param {{ directivePath: string, agentDir: string }} opts
+ * @param {{ directivePath: string, agentDir: string, renderMemorySection?: (agent: string, user: undefined) => string }} opts
  * @returns {{ updated: string[], unchanged: string[] }}
  */
 export function syncBootDirective(opts) {
@@ -74,13 +104,18 @@ export function syncBootDirective(opts) {
   for (const file of readdirSync(opts.agentDir).sort()) {
     if (!file.endsWith('.md')) continue;
     const path = join(opts.agentDir, file);
+    const agentName = file.replace(/\.md$/, '');
     const original = readFileSync(path, 'utf8');
     const { frontmatter, body } = splitFrontmatter(original);
     const stripped = stripExistingRegion(body).replace(/^[\r\n]+/, '');
     const fm = frontmatter || '';
     const fmTail = fm && !fm.endsWith('\n') ? '\n' : '';
     const sep = fm ? '\n' : '';
-    const next = `${fm}${fmTail}${sep}${directive}\n${stripped}`;
+    let next = `${fm}${fmTail}${sep}${directive}\n${stripped}`;
+    // Inject per-agent memory section if renderMemorySection is provided.
+    if (opts.renderMemorySection) {
+      next = injectMemorySection(next, agentName, opts.renderMemorySection);
+    }
     if (next === original) {
       unchanged.push(file);
     } else {
@@ -98,9 +133,23 @@ const isMain =
 if (isMain) {
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, '..');
+
+  // Load renderMemorySection from compiled dist if available (tsc must run first).
+  let renderMemorySection;
+  const distMemoryBoot = join(root, 'dist', 'memoryBoot.js');
+  if (existsSync(distMemoryBoot)) {
+    const mod = await import(pathToFileURL(distMemoryBoot).href);
+    renderMemorySection = mod.renderMemorySection;
+  } else {
+    console.warn(
+      '[sync-boot-directive] dist/memoryBoot.js not found — memory section will not be injected. Run tsc first.'
+    );
+  }
+
   const result = syncBootDirective({
     directivePath: join(root, 'src', 'templates', '_boot-directive.md'),
     agentDir: join(root, 'src', 'templates', 'agents'),
+    renderMemorySection,
   });
   console.log(
     `[sync-boot-directive] updated=${result.updated.length} unchanged=${result.unchanged.length}`
