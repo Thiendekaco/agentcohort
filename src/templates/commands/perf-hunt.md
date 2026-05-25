@@ -17,7 +17,19 @@ changes. No blind optimization.**
    dispatcher classified this as Tier 4 / has an escalation keyword
    (cache, concurrency, race condition, transaction, …), STOP and
    surface the ranked bottleneck list BEFORE architect/optimizer cost
-   is committed. Then use **`AskUserQuestion`** with:
+   is committed.
+
+   ### Approval summary — bottleneck
+   **You are approving:** which measured bottleneck Claude should target before optimization work starts.
+   **Current conclusion:** `performance-hunter` has ranked the measured bottlenecks and identified the top candidate.
+   **If approved, Claude will:**
+   1. focus the rest of the workflow on the approved bottleneck
+   2. invoke `solution-architect` only if the likely fix affects caching, data flow, or architecture
+   3. optimize only after the target bottleneck is locked in
+   **Not done yet:** no optimization has been applied yet.
+   **Decision needed:** should Claude target the current top-ranked bottleneck?
+
+   Then use **`AskUserQuestion`** with:
    - `question`: `"Bottleneck identified — target the top-ranked one?"`
    - `header`: `"Bottleneck gate"`
    - `options`:
@@ -36,7 +48,19 @@ changes. No blind optimization.**
    `.agentcohort.json` for `gates.architect` (default `on`). If `on`, OR
    `auto` AND the dispatcher classified this as Tier 4 / arch-sensitive,
    STOP and surface the architect's decision (chosen approach + caching/
-   invalidation plan + risks). Then use **`AskUserQuestion`** with:
+   invalidation plan + risks).
+
+   ### Approval summary — architect
+   **You are approving:** the performance-oriented design before `perf-optimizer` changes internals while preserving behavior.
+   **Current conclusion:** the architect has chosen the boundary-safe optimization approach, including any caching or invalidation plan.
+   **If approved, Claude will:**
+   1. hand this design to `perf-optimizer`
+   2. measure before and after under the same workload
+   3. send the result through verification and perf review
+   **Not done yet:** no optimization has been applied yet; behavior must still remain unchanged.
+   **Decision needed:** should Claude proceed with this performance approach?
+
+   Then use **`AskUserQuestion`** with:
    - `question`: `"Architect verdict — proceed with this perf approach?"`
    - `header`: `"Architect gate"`
    - `options`:

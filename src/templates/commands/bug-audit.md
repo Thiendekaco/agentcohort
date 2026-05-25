@@ -16,7 +16,19 @@ product code.** Its only deliverable is a decision-ready report.
 3. **🚦 HUMAN GATE — root-cause**. Read `.agentcohort.json` for
    `gates.root-cause` (default `on`). If `on`, OR `auto` AND Tier ≥ 4,
    STOP and surface the root cause analysis BEFORE building the
-   reproduction. Then use **`AskUserQuestion`** with:
+   reproduction. Present this summary block first:
+
+   ### Approval summary — root-cause
+   **You are approving:** whether the current diagnosis matches the evidence before reproduction work begins.
+   **Current conclusion:** the root-cause analysis has connected the symptom, direct cause, root cause, and impact.
+   **If approved, Claude will:**
+   1. ask `reproduction-engineer` to make the bug deterministic
+   2. preserve the diagnosis as the basis for the later solution review
+   3. continue the audit without changing product code
+   **Not done yet:** no fix has been attempted; no product code will change in this flow.
+   **Decision needed:** does this root-cause verdict match the evidence well enough to continue?
+
+   Then use **`AskUserQuestion`** with:
    - `question`: `"Root-cause verdict — does this match the evidence?"`
    - `header`: `"Root-cause gate"`
    - `options`:
@@ -32,6 +44,18 @@ product code.** Its only deliverable is a decision-ready report.
    trade-offs; recommend one; define the human approval being requested.
 6. **🚦 HUMAN GATE — expert-council** (always, non-negotiable). This is
    the existing bug-audit approval gate from v0.1.x. The flow ends here.
+   Present this summary block near handoff:
+
+   ### Approval summary — expert-council
+   **You are approving:** which solution option should be allowed to move into `/bug-fix-approved`.
+   **Current conclusion:** the council has compared the solution options, recommended one, and described the trade-offs.
+   **If approved, Claude will:**
+   1. stop this audit flow
+   2. wait for you to invoke `/bug-fix-approved` with the approved option
+   3. keep code unchanged until that separate command is run
+   **Not done yet:** no code has been changed; `/bug-audit` never applies the fix.
+   **Decision needed:** which solution option do you approve for the separate fix flow?
+
    No code changes occur in `/bug-audit` regardless of any gate config —
    only `/bug-fix-approved` invoked separately by the user can change code.
 
