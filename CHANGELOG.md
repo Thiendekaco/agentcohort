@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/Thiendekaco/agentcohort/compare/v0.9.1...v0.9.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* ship 0.9.2 — clarify approval gates across flows ([#57](https://github.com/Thiendekaco/agentcohort/issues/57)) ([e766b61](https://github.com/Thiendekaco/agentcohort/commit/e766b61f9add725892e3a7918b75aeddec92cc61))
+
 ## [0.9.1](https://github.com/Thiendekaco/agentcohort/compare/v0.9.0...v0.9.1) (2026-05-22)
 
 
