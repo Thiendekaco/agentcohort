@@ -11,7 +11,7 @@ import {
   Source,
 } from './memorySchema';
 import { scanForSecrets, MatchedSecret } from './memorySecretGuard';
-import { appendJsonl, readJsonl } from './memoryIo';
+import { appendJsonl, readJsonl, acquireLock, releaseLock, rewriteJsonl } from './memoryIo';
 
 // ============================================================================
 // memory init
@@ -372,5 +372,100 @@ function findHitField(obj: Record<string, any>, matcher: (s: string) => boolean,
     }
   }
   return null;
+}
+
+// ============================================================================
+// memory mark-stale
+// ============================================================================
+
+export type MarkStaleMode =
+  | { kind: 'auto' }
+  | { kind: 'id'; id: string }
+  | { kind: 'filter'; files: string };
+
+export interface MemoryMarkStaleOptions {
+  cwd: string;
+  mode: MarkStaleMode;
+  collection?: CollectionName;
+  unstale?: boolean;
+  dryRun?: boolean;
+}
+
+export interface MemoryMarkStaleResult {
+  markedCount: number;
+  perCollection: Record<string, number>;
+}
+
+export function runMemoryMarkStale(opts: MemoryMarkStaleOptions): MemoryMarkStaleResult {
+  const targetCollections: CollectionName[] = opts.collection
+    ? [opts.collection]
+    : (['decisions', 'bugs', 'audit', 'verifications'] as CollectionName[]);
+
+  const newStale = !opts.unstale;
+  const autoMatcher = opts.mode.kind === 'auto' ? makeAutoMatcher(opts.cwd) : null;
+
+  const perCollection: Record<string, number> = {};
+  let total = 0;
+
+  for (const col of targetCollections) {
+    const path = pathFor(opts.cwd, col);
+    // For dry-run we still acquire a lock (read-only safe) for consistency,
+    // but skip the rewrite call. acquireLock will mkdir parents if needed.
+    const lock = acquireLock(path);
+    try {
+      let markedThis = 0;
+      const transform = (entries: any[]): any[] => entries.map((e) => {
+        if (e.stale === newStale) return e;
+        let shouldMark = false;
+        switch (opts.mode.kind) {
+          case 'id':
+            shouldMark = e.id === opts.mode.id;
+            break;
+          case 'filter':
+            shouldMark = Array.isArray(e?.context?.files) &&
+                         e.context.files.some((f: string) => f.includes((opts.mode as { kind: 'filter'; files: string }).files));
+            break;
+          case 'auto':
+            shouldMark = autoMatcher!(e);
+            break;
+        }
+        if (!shouldMark) return e;
+        markedThis += 1;
+        return { ...e, stale: newStale };
+      });
+
+      if (opts.dryRun) {
+        // Run transform to count, but do not write.
+        transform(readJsonl(path));
+      } else {
+        rewriteJsonl(path, transform);
+      }
+      perCollection[col] = markedThis;
+      total += markedThis;
+    } finally { releaseLock(lock); }
+  }
+
+  return { markedCount: total, perCollection };
+}
+
+function makeAutoMatcher(cwd: string): (entry: any) => boolean {
+  const cache = new Map<string, Set<string>>();
+  return (entry: any) => {
+    const commit = entry?.context?.commit;
+    if (!commit) return false;
+    const files: string[] = entry?.context?.files ?? [];
+    if (files.length === 0) return false;
+    let changed = cache.get(commit);
+    if (!changed) {
+      try {
+        const out = execSync(`git diff --name-only ${commit}..HEAD`, {
+          cwd, stdio: ['ignore', 'pipe', 'ignore'],
+        }).toString();
+        changed = new Set(out.split('\n').map((l) => l.trim()).filter(Boolean));
+      } catch { changed = new Set(); }
+      cache.set(commit, changed);
+    }
+    return files.some((f) => changed!.has(f));
+  };
 }
 
