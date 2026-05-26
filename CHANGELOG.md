@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/Thiendekaco/agentcohort/compare/v0.9.2...v0.10.0) (2026-05-26)
+
+
+### Features
+
+* ship 0.10.0 — memory layer (4-layer + 5 safety + 8 CLI commands) ([#61](https://github.com/Thiendekaco/agentcohort/issues/61)) ([2837023](https://github.com/Thiendekaco/agentcohort/commit/283702336d1ed85b835204f353a52040327aa7c3))
+
 ## [0.9.2](https://github.com/Thiendekaco/agentcohort/compare/v0.9.1...v0.9.2) (2026-05-25)
 
 
