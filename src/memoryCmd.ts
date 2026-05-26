@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { v4 as uuidv4 } from 'uuid';
@@ -610,4 +610,161 @@ export function runMemoryScanHotspots(opts: MemoryScanHotspotsOptions): MemorySc
   const perFile: Record<string, number> = {};
   for (const [file, info] of qualifying) perFile[file] = info.count;
   return { hotspotCount: qualifying.length, perFile };
+}
+
+// ============================================================================
+// memory compact (v0.10.1) — bookkeeping merge, no LLM
+// ============================================================================
+
+export interface MemoryCompactOptions {
+  cwd: string;
+  collection?: CollectionName;
+  olderThan?: string;
+  keepLast?: number;
+  dryRun?: boolean;
+}
+
+export interface MemoryCompactResult {
+  compactedCount: number;
+  perCollection: Record<string, number>;
+  skippedAudit?: boolean;
+}
+
+const COMPACT_MIN_ENTRIES = 10;
+const NON_COMPACTABLE: ReadonlySet<CollectionName> = new Set([
+  'audit', 'verifications', 'scratch',
+] as const) as ReadonlySet<CollectionName>;
+
+export function runMemoryCompact(opts: MemoryCompactOptions): MemoryCompactResult {
+  if (opts.collection && NON_COMPACTABLE.has(opts.collection)) {
+    return { compactedCount: 0, perCollection: {}, skippedAudit: true };
+  }
+
+  const targets: CollectionName[] = opts.collection
+    ? [opts.collection]
+    : (['decisions', 'bugs', 'hotspots', 'conventions', 'module-map'] as CollectionName[]);
+
+  const cutoffTs = opts.olderThan ? Date.now() - parseDuration(opts.olderThan) : null;
+  const keepLast = opts.keepLast ?? 0;
+
+  const perCollection: Record<string, number> = {};
+  let total = 0;
+
+  for (const col of targets) {
+    const path = pathFor(opts.cwd, col);
+    const lock = acquireLock(path);
+    try {
+      const entries = readJsonl<any>(path);
+      entries.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+      const keepFrom = Math.max(0, entries.length - keepLast);
+      const oldCandidates = entries.slice(0, keepFrom).filter((e) => {
+        if (cutoffTs === null) return true;
+        return new Date(e.ts).getTime() < cutoffTs;
+      });
+
+      if (oldCandidates.length < COMPACT_MIN_ENTRIES) {
+        perCollection[col] = 0;
+        continue;
+      }
+
+      const compactedEntry = {
+        id: uuidv4(),
+        ts: oldCandidates[oldCandidates.length - 1].ts,
+        run_id: null,
+        source: 'cli' as const,
+        confidence: 1.0,
+        verified: true,
+        stale: false,
+        context: {
+          files: [],
+          commit: null,
+          task_summary: `compacted ${oldCandidates.length} entries`,
+        },
+        body: {
+          _compacted: true,
+          merged_count: oldCandidates.length,
+          ts_oldest: oldCandidates[0].ts,
+          ts_newest: oldCandidates[oldCandidates.length - 1].ts,
+          id_range: [oldCandidates[0].id, oldCandidates[oldCandidates.length - 1].id],
+        },
+      };
+
+      if (!opts.dryRun) {
+        const oldSet = new Set(oldCandidates.map((e) => e.id));
+        const kept = entries.filter((e) => !oldSet.has(e.id));
+        rewriteJsonl<any>(path, () => [compactedEntry, ...kept]);
+      }
+
+      perCollection[col] = oldCandidates.length;
+      total += 1;
+    } finally { releaseLock(lock); }
+  }
+
+  return { compactedCount: total, perCollection };
+}
+
+// ============================================================================
+// memory clean --runs (v0.10.1)
+// ============================================================================
+
+export interface MemoryCleanOptions {
+  cwd: string;
+  olderThan?: string;
+  orphans?: boolean;
+  dryRun?: boolean;
+}
+
+export interface MemoryCleanResult {
+  removedCount: number;
+  removedRunIds: string[];
+}
+
+const ORPHAN_GRACE_MS = 3_600_000;
+
+export function runMemoryClean(opts: MemoryCleanOptions): MemoryCleanResult {
+  const indexPath = join(opts.cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  const events = readJsonl<any>(indexPath);
+
+  const byRun = new Map<string, { start?: any; end?: any }>();
+  for (const e of events) {
+    if (e.event !== 'start' && e.event !== 'end') continue;
+    const slot = byRun.get(e.run_id) ?? {};
+    if (e.event === 'start') slot.start = e;
+    else slot.end = e;
+    byRun.set(e.run_id, slot);
+  }
+
+  const cutoffTs = opts.olderThan ? Date.now() - parseDuration(opts.olderThan) : null;
+  const now = Date.now();
+  const toRemove: string[] = [];
+
+  for (const [runId, { start, end }] of byRun) {
+    if (!start) continue;
+    const startTs = new Date(start.ts).getTime();
+
+    if (cutoffTs !== null && startTs < cutoffTs) {
+      toRemove.push(runId);
+      continue;
+    }
+    if (opts.orphans && !end && now - startTs >= ORPHAN_GRACE_MS) {
+      toRemove.push(runId);
+    }
+  }
+
+  if (toRemove.length === 0) return { removedCount: 0, removedRunIds: [] };
+  if (opts.dryRun) return { removedCount: toRemove.length, removedRunIds: toRemove };
+
+  for (const runId of toRemove) {
+    const d = join(opts.cwd, '.agentcohort', 'runs', runId);
+    rmSync(d, { recursive: true, force: true });
+  }
+
+  const lock = acquireLock(indexPath);
+  try {
+    const toRemoveSet = new Set(toRemove);
+    rewriteJsonl<any>(indexPath, (all) => all.filter((e) => !toRemoveSet.has(e.run_id)));
+  } finally { releaseLock(lock); }
+
+  return { removedCount: toRemove.length, removedRunIds: toRemove };
 }
