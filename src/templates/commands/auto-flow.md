@@ -8,6 +8,10 @@ argument-hint: <describe the task, paste the bug, or point at the diff>
 You are the **orchestrator**. Do **not** start the downstream pipeline
 yet. First classify, then surface the plan, then wait for the user.
 
+## Memory layer (agentcohort v0.10+)
+
+The `dispatcher` subagent (invoked first below) is responsible for calling `agentcohort run start --pipeline=<chosen>` after it classifies the task. It captures the printed UUID and includes `Run ID: <uuid>` in every downstream handoff.
+
 ## Step 1 — Classify (cheap, mandatory)
 
 Invoke the `dispatcher` subagent on `$ARGUMENTS`. The dispatcher
@@ -120,3 +124,9 @@ Step 2's flow list):
 If your project's CLAUDE.md says "skip dispatcher for trivial questions"
 or similar, honour it — but only for Tier 0 questions. Anything that
 might touch code goes through the dispatcher first.
+
+## Pipeline end
+
+The last agent of the chosen pipeline calls `agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`. See each pipeline's own template for which agent that is.
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

@@ -8,6 +8,14 @@ argument-hint: <what is slow + the workload/metric if known>
 Orchestrate the performance workflow for `$ARGUMENTS`. **Evidence before
 changes. No blind optimization.**
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=perf-hunt --tier=3 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## Pipeline
 
 1. **performance-hunter** — define "slow" (metric, workload, target), gather
@@ -29,6 +37,15 @@ changes. No blind optimization.**
    `AskUserQuestion` is unavailable: numbered text menu accepting
    `1`/`y`/Enter / `revise <feedback>` / `abort`. If `off`, skip
    this gate.
+
+   ### Gate: bottleneck
+
+   When the user responds (approve / revise / abort / escalate), record the outcome:
+
+   `agentcohort gate record --run-id=$RUN_ID --gate=bottleneck --outcome=<approved|rejected|escalated|auto-skipped> --proposed-content="<short summary of what was up for approval>" --posing-agent=performance-hunter [--reason="<user text — REQUIRED on reject/escalate>"]`
+
+   If outcome is `rejected` or `aborted`, also call `agentcohort run end --run-id=$RUN_ID --outcome=aborted` and STOP the pipeline.
+
 3. **solution-architect** — *only if* the likely fix affects caching, data
    flow, or architecture. Decide the boundary-safe approach. Otherwise skip
    and say why.
@@ -68,3 +85,11 @@ changes. No blind optimization.**
 
 Stage summary including before/after numbers, behavior-preserved evidence, and
 the reviewer's APPROVE/BLOCK verdict.
+
+## Pipeline end
+
+The **perf-reviewer** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

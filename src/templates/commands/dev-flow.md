@@ -9,6 +9,14 @@ Orchestrate the following subagents **in order** for the task in
 `$ARGUMENTS`. Pass each agent's output forward as context. Stop and report if
 any stage raises a blocker.
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=dev-flow --tier=3 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## Pipeline
 
 1. **repo-scout** — locate files, trace current flow, identify change points.
@@ -33,6 +41,11 @@ any stage raises a blocker.
    `AskUserQuestion`, fall back to a numbered text menu and accept
    `1`/`y`/Enter as Approve, `revise <feedback>` as Revise, `abort`
    as Abort. If `gates.architect` is `off`, skip this gate entirely.
+
+   After the user responds to the gate, the orchestrator records the outcome:
+
+   `agentcohort gate record --run-id=$RUN_ID --gate=architect --outcome=<approved|rejected|escalated|auto-skipped> --proposed-content="<short>" --posing-agent=solution-architect [--reason="<user text on reject/escalate>"]`
+
 4. **feature-planner** — produce the bite-sized, test-first implementation
    checklist with exact files and verification.
 5. **🚦 HUMAN GATE — plan**. Read `.agentcohort.json` for `gates.plan`
@@ -47,6 +60,11 @@ any stage raises a blocker.
      - `Abort` — Stop the pipeline.
    Same fallback contract as the architect gate
    (`1`/`y`/Enter / `revise <feedback>` / `abort`).
+
+   After the user responds to the gate, the orchestrator records the outcome:
+
+   `agentcohort gate record --run-id=$RUN_ID --gate=plan --outcome=<approved|rejected|escalated|auto-skipped> --proposed-content="<short>" --posing-agent=feature-planner [--reason="<user text on reject/escalate>"]`
+
 6. **feature-implementer** — execute the plan; minimal change; focused tests;
    targeted verification; no scope creep.
 7. **test-verifier** — add/run tests, typecheck, lint; fix only breakages
@@ -68,3 +86,11 @@ any stage raises a blocker.
 
 A stage-by-stage summary, ending with the reviewer's APPROVE/BLOCK verdict and
 the concrete next step.
+
+## Pipeline end
+
+The **final-reviewer** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.
