@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { CONFIG_FILENAME } from './config';
 import { readJsonl } from './memoryIo';
 import { scanForSecrets } from './memorySecretGuard';
+import { detectOpenWolf } from './openWolfOverlay';
 import {
   DEFAULT_MODELS,
   GATE_NAMES,
@@ -549,6 +550,9 @@ function checkMemory(cwd: string): SectionReport {
   checks.push(checkMemorySecrets(cwd));
   checks.push(checkCollectionSizes(cwd));
   checks.push(checkStaleRatio(cwd));
+  checks.push(checkHotspotsFresh(cwd));
+  checks.push(checkOpenWolfOverlap(cwd));
+  checks.push(checkStageEventsCoverage(cwd));
   return { name: 'Memory', checks };
 }
 
@@ -622,6 +626,64 @@ function checkStaleRatio(cwd: string): CheckResult {
   return ratio < STALE_RATIO_WARN
     ? { id: 'memory.stale-ratio', severity: 'ok', message: `stale ratio ${(ratio * 100).toFixed(1)}%` }
     : { id: 'memory.stale-ratio', severity: 'warn', message: `stale ratio ${(ratio * 100).toFixed(1)}% — run \`memory mark-stale --auto --unstale\` after a refresh` };
+}
+
+function checkHotspotsFresh(cwd: string): CheckResult {
+  const path = join(cwd, '.agentcohort/memory/shared/hotspots.jsonl');
+  if (!existsSync(path)) {
+    return { id: 'memory.hotspots-fresh', severity: 'info',
+      message: 'no hotspots.jsonl — run `agentcohort memory scan-hotspots` to seed' };
+  }
+  const entries = readJsonl<any>(path);
+  if (entries.length === 0) {
+    return { id: 'memory.hotspots-fresh', severity: 'info',
+      message: 'hotspots.jsonl empty — no files have crossed the bug threshold' };
+  }
+  const lastWriteTs = Math.max(...entries.map((e: any) => new Date(e.ts).getTime()));
+  const ageDays = (Date.now() - lastWriteTs) / 86_400_000;
+  return ageDays < 30
+    ? { id: 'memory.hotspots-fresh', severity: 'ok',   message: `hotspots fresh (last scan ${ageDays.toFixed(0)} days ago)` }
+    : { id: 'memory.hotspots-fresh', severity: 'info', message: `hotspots stale (last scan ${ageDays.toFixed(0)} days ago) — re-run scan-hotspots` };
+}
+
+function checkOpenWolfOverlap(cwd: string): CheckResult {
+  const wolf = detectOpenWolf(cwd);
+  if (!wolf.hasAnatomy && !wolf.hasCerebrum) {
+    return { id: 'memory.openwolf-overlap', severity: 'ok', message: 'no OpenWolf overlap' };
+  }
+  const moduleMapPath = join(cwd, '.agentcohort/memory/shared/module-map.jsonl');
+  const conventionsPath = join(cwd, '.agentcohort/memory/shared/conventions.jsonl');
+  const moduleMapHasEntries = existsSync(moduleMapPath) && readJsonl<any>(moduleMapPath).length > 0;
+  const conventionsHasEntries = existsSync(conventionsPath) && readJsonl<any>(conventionsPath).length > 0;
+  const issues: string[] = [];
+  if (wolf.hasAnatomy && moduleMapHasEntries) issues.push('.wolf/anatomy.md AND module-map.jsonl both present');
+  if (wolf.hasCerebrum && conventionsHasEntries) issues.push('.wolf/cerebrum.md AND conventions.jsonl both present');
+  return issues.length === 0
+    ? { id: 'memory.openwolf-overlap', severity: 'ok', message: 'OpenWolf present, no overlap' }
+    : { id: 'memory.openwolf-overlap', severity: 'warn', message: `OpenWolf overlap: ${issues.join('; ')} — agents prefer OpenWolf on conflict` };
+}
+
+function checkStageEventsCoverage(cwd: string): CheckResult {
+  const indexPath = join(cwd, '.agentcohort/runs/INDEX.jsonl');
+  if (!existsSync(indexPath)) {
+    return { id: 'memory.stage-events-coverage', severity: 'info', message: 'no runs tracked yet' };
+  }
+  const events = readJsonl<any>(indexPath);
+  const startEvents = events.filter((e: any) => e.event === 'start').slice(-10);
+  if (startEvents.length === 0) {
+    return { id: 'memory.stage-events-coverage', severity: 'info', message: 'no runs tracked yet' };
+  }
+  let withStages = 0;
+  for (const s of startEvents) {
+    const hasStage = events.some((e: any) => e.run_id === s.run_id && e.event === 'stage_start');
+    if (hasStage) withStages += 1;
+  }
+  const pct = (withStages / startEvents.length) * 100;
+  if (pct >= 80) {
+    return { id: 'memory.stage-events-coverage', severity: 'ok', message: `${pct.toFixed(0)}% of last ${startEvents.length} runs emit stage events` };
+  }
+  return { id: 'memory.stage-events-coverage', severity: 'warn',
+    message: `only ${pct.toFixed(0)}% of last ${startEvents.length} runs emit stage events — run \`agentcohort refresh-skills\` to re-bake` };
 }
 
 // ---------- Section: CLAUDE.md ----------
