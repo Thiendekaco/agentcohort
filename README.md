@@ -8,7 +8,7 @@
 
 agentcohort installs **16 specialist subagents**, **9 workflow pipelines**, and a **4-layer memory system** into any project. A smart dispatcher right-sizes the pipeline to your task — small fixes stay cheap, sensitive changes (auth / schema / payment) get the full architect + expert-council treatment.
 
-## 🎯 The killer feature: smart routing
+## 🎯 How it works
 
 You type a task in Claude Code. agentcohort's dispatcher reads it, classifies the complexity, and **automatically picks the right team of agents** — strong models (opus) for hard work, cheap models (haiku / sonnet) for easy work. No more burning premium tokens on "where is X?". No more under-powering a schema migration.
 
