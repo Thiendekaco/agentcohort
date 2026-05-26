@@ -743,6 +743,29 @@ collections, `agentcohort stats` cost dashboard, dispatcher integration
 OpenWolf overlay (skip `module-map` when `.wolf/anatomy.md` exists), and
 read-time stale auto-detection.
 
+#### v0.10.1 extensions
+
+3 more collections (`hotspots`, `conventions`, `module-map`), 6 more commands, dispatcher memory-aware routing, read-time stale auto-detection, per-stage events in INDEX, OpenWolf overlay.
+
+```bash
+agentcohort memory list-runs       [--limit=N] [--since=<dur>] [--json]
+agentcohort memory scan-modules    [--root=<path>] [--dry-run] [--yes] [--json]
+agentcohort memory scan-hotspots   [--threshold=N] [--json]
+agentcohort memory compact         [--collection=<name>] [--older-than=<dur>] [--keep-last=<N>] [--dry-run]
+agentcohort memory clean           --runs [--older-than=30d] [--orphans] [--dry-run]
+agentcohort stats                  [--since=<dur>] [--compare-naive] [--json]
+```
+
+**Stats validates the cost-savings claim** — `agentcohort stats --compare-naive` reads `runs/INDEX.jsonl` + agent stage events, computes actual token cost via a static per-agent table, and compares to a hypothetical "always-full-pipeline" scenario.
+
+**Dispatcher routes from memory** — at classification time, the dispatcher reads recent runs (Jaccard similarity ≥ 0.3), hotspots (forces architect gate ON for fragility ≥ 0.5), and past decisions for files in the task. Routing reasoning is recorded in `audit.jsonl`.
+
+**Read-time stale detection** — `memory read` runs `git diff` per unique commit in the result set (cached per-process), surfacing `_effective_stale` on each entry. Skip with `--no-stale-check` in tight loops.
+
+**OpenWolf overlay** — when `.wolf/anatomy.md` exists, `scan-modules` warns it'll be redundant. When `.wolf/cerebrum.md` exists, `conventions.jsonl` runs in parallel and agents are instructed to prefer OpenWolf on conflict. Doctor surfaces overlap as a warning.
+
+See [`docs/memory/v0.10.1-extensions.md`](docs/memory/v0.10.1-extensions.md) for the full extension reference.
+
 ### Share customizations across projects — `agentcohort export` / `import`
 
 Bundle every local file (`add` / `add --override` output) plus
