@@ -395,6 +395,52 @@ describe('runInit - CLAUDE.md handling', () => {
   });
 });
 
+describe('runInit — memory layer', () => {
+  it('with yes:true, initializes memory layer (default git policy)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcohort-install-mem-'));
+    try {
+      await runInit({
+        cwd: dir,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: FIXED_NOW,
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+      });
+      expect(existsSync(join(dir, '.agentcohort/memory/shared'))).toBe(true);
+      expect(existsSync(join(dir, '.agentcohort/runs'))).toBe(true);
+      const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
+      expect(gi).toContain('.agentcohort/memory/local/');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips memory init in dry-run mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcohort-install-mem-dry-'));
+    try {
+      await runInit({
+        cwd: dir,
+        yes: true,
+        dryRun: true,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: FIXED_NOW,
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+      });
+      // dry-run: memory dirs should NOT be created
+      expect(existsSync(join(dir, '.agentcohort'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('runInit — skill injection into boot directive', () => {
   it('bakes the skill list into every installed agent when skills is provided', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'af-init-skills-'));

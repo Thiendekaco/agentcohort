@@ -5,6 +5,31 @@ export const MEMORY_MARKERS = {
   end:   '<!-- agentcohort-memory-end -->',
 } as const;
 
+/**
+ * Inject (or refresh) the rendered memory section into an agent's boot
+ * directive. Mirrors the `injectSkillsList` pattern in skillsBoot.ts.
+ *
+ * - If the markers are absent the content is returned unchanged.
+ * - Idempotent: re-running with the same affinity yields the same output.
+ */
+export function injectMemorySection(
+  content: string,
+  agentName: string,
+  userOverrides: Record<string, MemoryAffinityEntry> | undefined,
+): string {
+  const startIdx = content.indexOf(MEMORY_MARKERS.start);
+  if (startIdx === -1) return content;
+  const endIdx = content.indexOf(MEMORY_MARKERS.end, startIdx + MEMORY_MARKERS.start.length);
+  if (endIdx === -1) return content;
+
+  // renderMemorySection returns the full block including both markers.
+  // We replace everything from start marker to (and including) end marker.
+  const fullRendered = renderMemorySection(agentName, userOverrides);
+  const before = content.slice(0, startIdx);
+  const after = content.slice(endIdx + MEMORY_MARKERS.end.length);
+  return before + fullRendered + after;
+}
+
 export function renderMemorySection(
   agent: string,
   user: Record<string, MemoryAffinityEntry> | undefined,
