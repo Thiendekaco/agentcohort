@@ -1,4 +1,5 @@
 import { affinityFor, MemoryAffinityEntry } from './memoryAffinity';
+import { generateDispatcherLookupInstructions } from './memoryLookup';
 
 export const MEMORY_MARKERS = {
   start: '<!-- agentcohort-memory-start -->',
@@ -70,6 +71,14 @@ export function renderMemorySection(
     `   **NEVER store secrets** — API keys, tokens, .env content, private keys,`,
     `   stacktraces with creds. The CLI rejects what it detects, but YOU are the`,
     `   first line of defense. If unsure, redact aggressively.`,
+    ``,
+    `   At the VERY START of your work, BEFORE reading any memory:`,
+    `     \`agentcohort run start --stage=${agent} --run-id=<RUN_ID>\``,
+    ``,
+    `   At the VERY END, AFTER your last memory write:`,
+    `     \`agentcohort run end --stage=${agent} --run-id=<RUN_ID> --outcome=<success|failed|aborted>\``,
+    ``,
+    ...(agent === 'dispatcher' ? generateDispatcherLookupInstructions().split('\n') : []),
     MEMORY_MARKERS.end,
   ].join('\n');
 }

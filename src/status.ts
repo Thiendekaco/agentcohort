@@ -4,6 +4,7 @@ import { CONFIG_FILENAME } from './config';
 import { DEFAULT_MODELS, DEFAULT_GATES, GateName, GateMode } from './defaults';
 import { getVersion } from './paths';
 import { readJsonl } from './memoryIo';
+import { detectOpenWolf, OpenWolfState } from './openWolfOverlay';
 
 /**
  * `agentcohort status` — fast read-only at-a-glance report of the
@@ -40,6 +41,8 @@ export interface MemoryStatus {
   lastWrite: { ts: string; source: string; collection: string } | null;
   staleEntries: number;
   gitPolicy: 'shared-committed-local-gitignored' | 'all-gitignored' | 'all-committed' | 'unknown';
+  openWolf?: OpenWolfState;                // NEW (v0.10.1)
+  stageCoveragePct?: number | null;        // NEW (v0.10.1)
 }
 
 export interface PlannedFeature {
@@ -163,7 +166,9 @@ function readMemory(cwd: string): MemoryStatus {
     };
   }
   const sharedDir = join(memDir, 'shared');
-  const collections: Record<string, number> = {};
+  // Seed known collections with 0 so callers can rely on their presence.
+  const KNOWN_COLLECTIONS = ['decisions', 'bugs', 'hotspots', 'conventions', 'module-map'] as const;
+  const collections: Record<string, number> = Object.fromEntries(KNOWN_COLLECTIONS.map((c) => [c, 0]));
   let staleEntries = 0;
   let lastWrite: MemoryStatus['lastWrite'] = null;
   if (existsSync(sharedDir)) {
@@ -182,9 +187,22 @@ function readMemory(cwd: string): MemoryStatus {
   const runsTracked = existsSync(indexPath)
     ? readJsonl<any>(indexPath).filter((e: any) => e.event === 'start').length
     : 0;
+  const openWolf = detectOpenWolf(cwd);
+  let stageCoveragePct: number | null = null;
+  const idx = join(cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  if (existsSync(idx)) {
+    const events = readJsonl<any>(idx);
+    const starts = events.filter((e: any) => e.event === 'start').slice(-10);
+    if (starts.length > 0) {
+      const withStages = starts.filter((s: any) =>
+        events.some((e: any) => e.run_id === s.run_id && e.event === 'stage_start')
+      ).length;
+      stageCoveragePct = (withStages / starts.length) * 100;
+    }
+  }
   return {
     initialized: true, collections, runsTracked, lastWrite, staleEntries,
-    gitPolicy: detectGitPolicy(cwd),
+    gitPolicy: detectGitPolicy(cwd), openWolf, stageCoveragePct,
   };
 }
 

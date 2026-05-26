@@ -524,3 +524,63 @@ describe('runDoctor — skill-drift detection (PR3)', () => {
     expect(skillsStale).toBeUndefined();
   });
 });
+
+describe('doctor — v0.10.1 checks', () => {
+  let memDir: string;
+  beforeEach(() => {
+    memDir = mkdtempSync(join(tmpdir(), 'agentcohort-doctor-v10_1-'));
+    execSync('git init -q', { cwd: memDir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: memDir });
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+  });
+  afterEach(() => rmSync(memDir, { recursive: true, force: true }));
+
+  it('memory.hotspots-fresh is info when hotspots.jsonl absent', () => {
+    const r = runDoctor({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    // Severity is per-check; locate by id or name
+    const findCheck = (id: string) => {
+      for (const sec of (r as any).sections ?? []) {
+        for (const c of sec.checks ?? []) {
+          if (c.id === id || c.name === id) return c;
+        }
+      }
+      return (r as any).checks?.find((c: any) => c.id === id || c.name === id);
+    };
+    const check = findCheck('memory.hotspots-fresh');
+    expect(check?.severity).toBe('info');
+  });
+
+  it('memory.openwolf-overlap warns when both .wolf/anatomy + module-map present', () => {
+    require('node:fs').mkdirSync(join(memDir, '.wolf'));
+    require('node:fs').writeFileSync(join(memDir, '.wolf/anatomy.md'), '# anatomy');
+    require('node:fs').writeFileSync(
+      join(memDir, '.agentcohort/memory/shared/module-map.jsonl'),
+      '{"id":"00000000-0000-4000-8000-000000000000","ts":"2026-01-01T00:00:00.000Z","run_id":null,"source":"cli","confidence":1,"verified":true,"stale":false,"context":{"files":[],"commit":null,"task_summary":"t"},"body":{"module":"src/x","description":"d","responsibilities":["r"],"key_files":[],"dependencies":[]}}\n',
+    );
+    const r = runDoctor({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    const findCheck = (id: string) => {
+      for (const sec of (r as any).sections ?? []) {
+        for (const c of sec.checks ?? []) {
+          if (c.id === id || c.name === id) return c;
+        }
+      }
+      return (r as any).checks?.find((c: any) => c.id === id || c.name === id);
+    };
+    const check = findCheck('memory.openwolf-overlap');
+    expect(check?.severity).toBe('warn');
+  });
+
+  it('memory.stage-events-coverage is info with no runs', () => {
+    const r = runDoctor({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    const findCheck = (id: string) => {
+      for (const sec of (r as any).sections ?? []) {
+        for (const c of sec.checks ?? []) {
+          if (c.id === id || c.name === id) return c;
+        }
+      }
+      return (r as any).checks?.find((c: any) => c.id === id || c.name === id);
+    };
+    const check = findCheck('memory.stage-events-coverage');
+    expect(check?.severity).toBe('info');
+  });
+});

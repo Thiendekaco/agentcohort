@@ -166,6 +166,9 @@ describe('bodySchemaFor', () => {
 
 describe('COLLECTION_NAMES', () => {
   it('matches the spec', () => {
-    expect(COLLECTION_NAMES).toEqual(['decisions', 'bugs', 'scratch', 'audit', 'verifications']);
+    expect(COLLECTION_NAMES).toEqual([
+      'decisions', 'bugs', 'scratch', 'audit', 'verifications',
+      'hotspots', 'conventions', 'module-map',
+    ]);
   });
 });

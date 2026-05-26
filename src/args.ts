@@ -72,6 +72,17 @@ export interface ParsedArgs {
   reason: string | null;
   proposedContent: string | null;
   posingAgent: string | null;
+
+  // ---- memory layer v0.10.1 additions ----
+  noStaleCheck: boolean;
+  stage: string | null;
+  olderThan: string | null;
+  keepLast: number | null;
+  orphans: boolean;
+  threshold: number | null;
+  root: string | null;
+  apply: boolean;
+  compareNaive: boolean;
 }
 
 const FLAGS: Record<string, keyof ParsedArgs> = {
@@ -103,6 +114,10 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '--gitignore-all':      'gitignoreAll',
   '--auto':               'autoStale',
   '--unstale':            'unstale',
+  '--no-stale-check':     'noStaleCheck',
+  '--orphans':            'orphans',
+  '--apply':              'apply',
+  '--compare-naive':      'compareNaive',
 };
 
 /**
@@ -135,6 +150,11 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = {
   '--reason': 'reason',
   '--proposed-content': 'proposedContent',
   '--posing-agent': 'posingAgent',
+  '--stage':       'stage',
+  '--older-than':  'olderThan',
+  '--keep-last':   'keepLast',
+  '--threshold':   'threshold',
+  '--root':        'root',
 };
 
 /** Pure, deterministic argument parser. Unknown tokens are collected, not thrown. */
@@ -194,6 +214,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
     reason: null,
     proposedContent: null,
     posingAgent: null,
+    // memory layer v0.10.1 additions
+    noStaleCheck: false,
+    stage: null,
+    olderThan: null,
+    keepLast: null,
+    orphans: false,
+    threshold: null,
+    root: null,
+    apply: false,
+    compareNaive: false,
   };
   for (const arg of argv) {
     if (arg.startsWith('--')) {
@@ -218,7 +248,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         const valueKey = VALUE_FLAGS[flagName];
         if (valueKey !== undefined) {
           // Apply type coercions for specific fields.
-          if (valueKey === 'confidence' || valueKey === 'limit' || valueKey === 'tier') {
+          if (valueKey === 'confidence' || valueKey === 'limit' || valueKey === 'tier' || valueKey === 'keepLast' || valueKey === 'threshold') {
             (parsed as unknown as Record<string, number>)[valueKey] = Number(rawValue);
           } else if (valueKey === 'verifiedFlag') {
             (parsed as unknown as Record<string, boolean>)[valueKey] = rawValue === 'true';
@@ -487,5 +517,13 @@ ${b('Gate recording:')}
   agentcohort gate record --run-id=<uuid> --gate=<name> --outcome=<verb> \\
                           --proposed-content="<txt>" --posing-agent=<name> [--reason="<txt>"]
       Record gate approve/reject/escalate/auto-skip into audit.jsonl.
+
+${b('v0.10.1 additions:')}
+  agentcohort memory list-runs    [--limit=N] [--since=<dur>] [--json]
+  agentcohort memory scan-modules [--root=<path>] [--dry-run] [--yes] [--json]
+  agentcohort memory scan-hotspots [--threshold=N] [--json]
+  agentcohort memory compact      [--collection=<name>] [--older-than=<dur>] [--keep-last=<N>] [--dry-run]
+  agentcohort memory clean        --runs [--older-than=30d] [--orphans] [--dry-run]
+  agentcohort stats               [--since=<dur>] [--compare-naive] [--json]
 `;
 }

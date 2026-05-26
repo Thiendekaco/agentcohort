@@ -27,7 +27,7 @@ model: sonnet
 <!-- agentcohort-memory-start -->
 4. Memory layer (agentcohort v0.10+).
    This agent's memory affinity:
-   - Reads: bugs, scratch
+   - Reads: bugs, scratch, hotspots
    - Writes: scratch, verifications
 
    Your prompt contains a line like `Run ID: <uuid>` from the dispatcher.
@@ -56,6 +56,13 @@ model: sonnet
    **NEVER store secrets** — API keys, tokens, .env content, private keys,
    stacktraces with creds. The CLI rejects what it detects, but YOU are the
    first line of defense. If unsure, redact aggressively.
+
+   At the VERY START of your work, BEFORE reading any memory:
+     `agentcohort run start --stage=regression-guard --run-id=<RUN_ID>`
+
+   At the VERY END, AFTER your last memory write:
+     `agentcohort run end --stage=regression-guard --run-id=<RUN_ID> --outcome=<success|failed|aborted>`
+
 <!-- agentcohort-memory-end -->
 4. Your role below is the default playbook. User CLAUDE.md, skills,
    and OpenWolf-recorded rules override this playbook on conflict.

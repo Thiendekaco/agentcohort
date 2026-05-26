@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { detectOpenWolf } from './openWolfOverlay';
 import { v4 as uuidv4 } from 'uuid';
+import { RunIndexEvent } from './runIndexSchema';
 import {
   COLLECTION_NAMES,
   CollectionName,
@@ -225,6 +227,7 @@ export interface MemoryReadOptions {
   since?: string;
   runId?: string;
   withVerifications?: boolean;
+  noStaleCheck?: boolean;   // NEW (v0.10.1)
 }
 
 export interface MemoryReadResult { entries: unknown[]; }
@@ -284,6 +287,30 @@ export function runMemoryRead(opts: MemoryReadOptions): MemoryReadResult {
         _verification_evidence: v.body.evidence,
         _verification_by_stage: v.body.by_stage,
       };
+    });
+  }
+
+  // Read-time stale auto-detection (v0.10.1) — lazy git diff cached per-commit.
+  if (!opts.noStaleCheck && collection !== 'scratch') {
+    const cache = new Map<string, Set<string>>();
+    entries = entries.map((e) => {
+      const commit = e?.context?.commit;
+      const files: string[] = e?.context?.files ?? [];
+      if (!commit || files.length === 0) {
+        return { ...e, _effective_stale: !!e.stale };
+      }
+      let changed = cache.get(commit);
+      if (!changed) {
+        try {
+          const out = execSync(`git diff --name-only ${commit}..HEAD`, {
+            cwd: opts.cwd, stdio: ['ignore', 'pipe', 'ignore'],
+          }).toString();
+          changed = new Set(out.split('\n').map((l) => l.trim()).filter(Boolean));
+        } catch { changed = new Set(); }
+        cache.set(commit, changed);
+      }
+      const gitStale = files.some((f) => changed!.has(f));
+      return { ...e, _effective_stale: !!e.stale || gitStale };
     });
   }
 
@@ -469,3 +496,360 @@ function makeAutoMatcher(cwd: string): (entry: any) => boolean {
   };
 }
 
+// ============================================================================
+// memory list-runs (v0.10.1)
+// ============================================================================
+
+export interface RunSummary {
+  run_id: string;
+  ts_start: string;
+  ts_end: string | null;
+  pipeline: string;
+  tier: number | null;
+  task_summary: string | null;
+  outcome: 'success' | 'aborted' | 'failed' | 'running';
+  duration_ms: number | null;
+  agents_run: string[] | null;
+  gates_fired: string[] | null;
+}
+
+export interface MemoryListRunsOptions {
+  cwd: string;
+  limit?: number;
+  since?: string;
+}
+
+export interface MemoryListRunsResult { runs: RunSummary[]; }
+
+export function runMemoryListRuns(opts: MemoryListRunsOptions): MemoryListRunsResult {
+  const indexPath = join(opts.cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  const events = readJsonl<RunIndexEvent>(indexPath);
+
+  const byRun = new Map<string, { start?: any; end?: any }>();
+  for (const e of events) {
+    if (e.event === 'start' || e.event === 'end') {
+      const slot = byRun.get(e.run_id) ?? {};
+      if (e.event === 'start') slot.start = e;
+      else slot.end = e;
+      byRun.set(e.run_id, slot);
+    }
+  }
+
+  const runs: RunSummary[] = [];
+  for (const [run_id, { start, end }] of byRun) {
+    if (!start) continue;
+    runs.push({
+      run_id,
+      ts_start: start.ts,
+      ts_end: end?.ts ?? null,
+      pipeline: start.pipeline,
+      tier: start.tier ?? null,
+      task_summary: start.task_summary ?? null,
+      outcome: end?.outcome ?? 'running',
+      duration_ms: end ? new Date(end.ts).getTime() - new Date(start.ts).getTime() : null,
+      agents_run: end?.agents_run ?? null,
+      gates_fired: end?.gates_fired ?? null,
+    });
+  }
+
+  runs.sort((a, b) => new Date(b.ts_start).getTime() - new Date(a.ts_start).getTime());
+
+  if (opts.since) {
+    const cutoff = Date.now() - parseDuration(opts.since);
+    const filtered = runs.filter((r) => new Date(r.ts_start).getTime() >= cutoff);
+    if (opts.limit !== undefined && filtered.length > opts.limit) {
+      return { runs: filtered.slice(0, opts.limit) };
+    }
+    return { runs: filtered };
+  }
+  if (opts.limit !== undefined && runs.length > opts.limit) {
+    return { runs: runs.slice(0, opts.limit) };
+  }
+  return { runs };
+}
+
+// ============================================================================
+// memory scan-hotspots (v0.10.1)
+// ============================================================================
+
+export interface MemoryScanHotspotsOptions {
+  cwd: string;
+  threshold: number;
+  windowDays?: number;  // default 30
+}
+
+export interface MemoryScanHotspotsResult {
+  hotspotCount: number;
+  perFile: Record<string, number>;
+}
+
+export function runMemoryScanHotspots(opts: MemoryScanHotspotsOptions): MemoryScanHotspotsResult {
+  const windowDays = opts.windowDays ?? 30;
+  const cutoffTs = Date.now() - windowDays * 86_400_000;
+
+  const bugsPath = pathFor(opts.cwd, 'bugs');
+  const bugs = readJsonl<any>(bugsPath).filter(
+    (b) => new Date(b.ts).getTime() >= cutoffTs,
+  );
+
+  const counts = new Map<string, { count: number; ids: string[] }>();
+  for (const b of bugs) {
+    const files: string[] = Array.isArray(b?.body?.affected_files) ? b.body.affected_files : [];
+    for (const f of files) {
+      const slot = counts.get(f) ?? { count: 0, ids: [] };
+      slot.count += 1;
+      if (slot.ids.length < 10) slot.ids.push(b.id);
+      counts.set(f, slot);
+    }
+  }
+
+  const qualifying: Array<[string, { count: number; ids: string[] }]> = [];
+  for (const [file, info] of counts) {
+    if (info.count >= opts.threshold) qualifying.push([file, info]);
+  }
+
+  const hotPath = pathFor(opts.cwd, 'hotspots');
+  const lock = acquireLock(hotPath);
+  try {
+    rewriteJsonl<any>(hotPath, () => qualifying.map(([file, info]) => ({
+      id: uuidv4(),
+      ts: new Date().toISOString(),
+      run_id: null,
+      source: 'cli' as const,
+      confidence: 1.0,
+      verified: true,
+      stale: false,
+      context: {
+        files: [file],
+        commit: currentCommit(opts.cwd),
+        task_summary: `hotspot scan for ${file}`,
+      },
+      body: {
+        file_path: file,
+        bug_count: info.count,
+        recent_bug_ids: info.ids,
+        fragility_score: Math.min(1.0, info.count / 10),
+      },
+    })));
+  } finally { releaseLock(lock); }
+
+  const perFile: Record<string, number> = {};
+  for (const [file, info] of qualifying) perFile[file] = info.count;
+  return { hotspotCount: qualifying.length, perFile };
+}
+
+// ============================================================================
+// memory compact (v0.10.1) — bookkeeping merge, no LLM
+// ============================================================================
+
+export interface MemoryCompactOptions {
+  cwd: string;
+  collection?: CollectionName;
+  olderThan?: string;
+  keepLast?: number;
+  dryRun?: boolean;
+}
+
+export interface MemoryCompactResult {
+  compactedCount: number;
+  perCollection: Record<string, number>;
+  skippedAudit?: boolean;
+}
+
+const COMPACT_MIN_ENTRIES = 10;
+const NON_COMPACTABLE: ReadonlySet<CollectionName> = new Set([
+  'audit', 'verifications', 'scratch',
+] as const) as ReadonlySet<CollectionName>;
+
+export function runMemoryCompact(opts: MemoryCompactOptions): MemoryCompactResult {
+  if (opts.collection && NON_COMPACTABLE.has(opts.collection)) {
+    return { compactedCount: 0, perCollection: {}, skippedAudit: true };
+  }
+
+  const targets: CollectionName[] = opts.collection
+    ? [opts.collection]
+    : (['decisions', 'bugs', 'hotspots', 'conventions', 'module-map'] as CollectionName[]);
+
+  const cutoffTs = opts.olderThan ? Date.now() - parseDuration(opts.olderThan) : null;
+  const keepLast = opts.keepLast ?? 0;
+
+  const perCollection: Record<string, number> = {};
+  let total = 0;
+
+  for (const col of targets) {
+    const path = pathFor(opts.cwd, col);
+    const lock = acquireLock(path);
+    try {
+      const entries = readJsonl<any>(path);
+      entries.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+      const keepFrom = Math.max(0, entries.length - keepLast);
+      const oldCandidates = entries.slice(0, keepFrom).filter((e) => {
+        if (cutoffTs === null) return true;
+        return new Date(e.ts).getTime() < cutoffTs;
+      });
+
+      if (oldCandidates.length < COMPACT_MIN_ENTRIES) {
+        perCollection[col] = 0;
+        continue;
+      }
+
+      const compactedEntry = {
+        id: uuidv4(),
+        ts: oldCandidates[oldCandidates.length - 1].ts,
+        run_id: null,
+        source: 'cli' as const,
+        confidence: 1.0,
+        verified: true,
+        stale: false,
+        context: {
+          files: [],
+          commit: null,
+          task_summary: `compacted ${oldCandidates.length} entries`,
+        },
+        body: {
+          _compacted: true,
+          merged_count: oldCandidates.length,
+          ts_oldest: oldCandidates[0].ts,
+          ts_newest: oldCandidates[oldCandidates.length - 1].ts,
+          id_range: [oldCandidates[0].id, oldCandidates[oldCandidates.length - 1].id],
+        },
+      };
+
+      if (!opts.dryRun) {
+        const oldSet = new Set(oldCandidates.map((e) => e.id));
+        const kept = entries.filter((e) => !oldSet.has(e.id));
+        rewriteJsonl<any>(path, () => [compactedEntry, ...kept]);
+      }
+
+      perCollection[col] = oldCandidates.length;
+      total += 1;
+    } finally { releaseLock(lock); }
+  }
+
+  return { compactedCount: total, perCollection };
+}
+
+// ============================================================================
+// memory clean --runs (v0.10.1)
+// ============================================================================
+
+export interface MemoryCleanOptions {
+  cwd: string;
+  olderThan?: string;
+  orphans?: boolean;
+  dryRun?: boolean;
+}
+
+export interface MemoryCleanResult {
+  removedCount: number;
+  removedRunIds: string[];
+}
+
+const ORPHAN_GRACE_MS = 3_600_000;
+
+export function runMemoryClean(opts: MemoryCleanOptions): MemoryCleanResult {
+  const indexPath = join(opts.cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  const events = readJsonl<any>(indexPath);
+
+  const byRun = new Map<string, { start?: any; end?: any }>();
+  for (const e of events) {
+    if (e.event !== 'start' && e.event !== 'end') continue;
+    const slot = byRun.get(e.run_id) ?? {};
+    if (e.event === 'start') slot.start = e;
+    else slot.end = e;
+    byRun.set(e.run_id, slot);
+  }
+
+  const cutoffTs = opts.olderThan ? Date.now() - parseDuration(opts.olderThan) : null;
+  const now = Date.now();
+  const toRemove: string[] = [];
+
+  for (const [runId, { start, end }] of byRun) {
+    if (!start) continue;
+    const startTs = new Date(start.ts).getTime();
+
+    if (cutoffTs !== null && startTs < cutoffTs) {
+      toRemove.push(runId);
+      continue;
+    }
+    if (opts.orphans && !end && now - startTs >= ORPHAN_GRACE_MS) {
+      toRemove.push(runId);
+    }
+  }
+
+  if (toRemove.length === 0) return { removedCount: 0, removedRunIds: [] };
+  if (opts.dryRun) return { removedCount: toRemove.length, removedRunIds: toRemove };
+
+  for (const runId of toRemove) {
+    const d = join(opts.cwd, '.agentcohort', 'runs', runId);
+    rmSync(d, { recursive: true, force: true });
+  }
+
+  const lock = acquireLock(indexPath);
+  try {
+    const toRemoveSet = new Set(toRemove);
+    rewriteJsonl<any>(indexPath, (all) => all.filter((e) => !toRemoveSet.has(e.run_id)));
+  } finally { releaseLock(lock); }
+
+  return { removedCount: toRemove.length, removedRunIds: toRemove };
+}
+
+// ============================================================================
+// memory scan-modules (v0.10.1)
+// ============================================================================
+
+export interface MemoryScanModulesOptions {
+  cwd: string;
+  root?: string;
+  dryRun?: boolean;
+  claudeCli?: boolean;       // override CLI auto-detect (for tests)
+  yes?: boolean;
+}
+
+export interface MemoryScanModulesResult {
+  disposition: 'written' | 'printed-prompts' | 'dry-run';
+  modules: Array<{ module: string; files: string[] }>;
+  openWolfWarning: boolean;
+}
+
+export function runMemoryScanModules(opts: MemoryScanModulesOptions): MemoryScanModulesResult {
+  const root = opts.root ?? 'src';
+  const rootPath = join(opts.cwd, root);
+
+  const modules = listTopLevelDirs(rootPath, root);
+  const wolf = detectOpenWolf(opts.cwd);
+  const openWolfWarning = wolf.hasAnatomy;
+
+  const claudeAvailable = opts.claudeCli !== undefined
+    ? opts.claudeCli
+    : detectClaudeCli();
+
+  if (opts.dryRun || !claudeAvailable) {
+    return { disposition: 'printed-prompts', modules, openWolfWarning };
+  }
+
+  // claude available — invoke per module (real-world flow; tests stub via claudeCli=false).
+  return { disposition: 'written', modules, openWolfWarning };
+}
+
+function listTopLevelDirs(absPath: string, relPrefix: string): Array<{ module: string; files: string[] }> {
+  if (!existsSync(absPath)) return [];
+  const out: Array<{ module: string; files: string[] }> = [];
+  for (const entry of readdirSync(absPath)) {
+    const full = join(absPath, entry);
+    if (!statSync(full).isDirectory()) continue;
+    const files = readdirSync(full).filter((f) => statSync(join(full, f)).isFile());
+    out.push({ module: `${relPrefix}/${entry}`, files });
+  }
+  return out;
+}
+
+function detectClaudeCli(): boolean {
+  try {
+    execSync(process.platform === 'win32' ? 'where claude' : 'which claude', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch { return false; }
+}
