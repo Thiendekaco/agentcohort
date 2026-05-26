@@ -8,21 +8,67 @@
 
 agentcohort installs **16 specialist subagents**, **9 workflow pipelines**, and a **4-layer memory system** into any project. A smart dispatcher right-sizes the pipeline to your task — small fixes stay cheap, sensitive changes (auth / schema / payment) get the full architect + expert-council treatment.
 
-## Why you need this
+## The problem with default Claude Code
 
-Default Claude Code has 4 problems:
+You ask Claude to "add a date-range filter to /transactions". It writes code in one shot. Looks fine. You merge. Then:
 
-1. **Costs spiral** — every task spawns a full pipeline, even "where is X?"
-2. **No discipline** — easy to ship shallow fixes that skip tests / review
-3. **No memory** — every conversation starts from zero, reinvents past decisions
-4. **Hard to review** — Claude writes code, you read code; expensive for both sides
+- You realize Claude didn't write tests.
+- It touched 3 unrelated files for no reason.
+- Next week, someone reports a regression — Claude had no memory of existing date-handling conventions.
+- You burned premium-tier tokens on a job that should have been a haiku-tier call.
 
-agentcohort fixes all 4:
+Multiply by 50 tasks a week and a team of 5. That's the bill, the broken trust in AI-generated code, and the hours spent reviewing.
 
-- **50-70% lower token spend** — smart dispatcher routes lookups to inline answers (~100% saved), small fixes to 4-agent pipelines (~45% saved), keeps full pipeline only for normal+ work
-- **16 specialist agents with strict roles** — scout explores, architect designs, planner locks scope, implementer codes, reviewer reviews. No jack-of-all-trades.
-- **4-layer memory** — the dispatcher reads past decisions + bug patterns + hotspots before classifying, surfaces "this looks like a task we shipped last Tuesday"
-- **Human review gates** — pause at architecture + plan checkpoints before expensive opus calls fire
+## The idea
+
+agentcohort's thesis: **AI coding is bottlenecked by discipline, not capability.** Frontier models are smart enough to be principal-level engineers — they just need the structure of a real engineering org around them:
+
+- **Specialists, not generalists** — one agent explores, another designs, another implements, another reviews. Each has a single focused job description.
+- **Review checkpoints** — pause at architecture + plan stages BEFORE expensive code-writing fires.
+- **Institutional memory** — past decisions, bug patterns, project conventions persist. The next conversation starts smarter.
+- **A router, not a hammer** — small fixes don't need full pipelines. Lookups don't need pipelines at all.
+
+What you get is Claude Code that behaves like a disciplined senior team, not a brilliant intern.
+
+## What this gives you
+
+### 💰 Lower token bill (50-70% on typical project mix)
+
+The smart dispatcher right-sizes every task instead of running a one-size-fits-all pipeline. Lookups answer inline (no agents, near 100% saved vs full pipeline). Small bug fixes use 4 agents instead of 6 (~45% saved). Normal+ features keep the full pipeline. Sensitive changes (auth / schema / payment / cache) intentionally get *more* — forced architect + expert-council gates pay for themselves by catching design mistakes early.
+
+Validate on YOUR project after ~10 real tasks: `agentcohort stats --compare-naive`. Your number will depend on your task mix (lookup-heavy projects save more; deep-feature-heavy projects less). The detailed breakdown is in [docs/agents.md](docs/agents.md#cost-savings--full-breakdown).
+
+### 🛡️ Higher quality output
+
+- **Architecture gate** catches "we shouldn't add this dependency" or "this should be a server-side query" BEFORE premium-tier tokens implement the wrong thing.
+- **Bug audit pipeline NEVER fixes** — produces a recommendation + waits for your approval. No more shallow "make the error go away" fixes that mask the root cause.
+- **Specialist agents with strict roles** — `solution-architect` proposes 2-3 approaches with explicit trade-offs (not the first plausible one); `final-reviewer` reads the diff with reviewer eyes; `regression-guard` verifies the fix doesn't break anything else.
+- **Test verification is non-negotiable** — every pipeline that touches code ends with `test-verifier` + `final-reviewer`. No "I wrote it, looks good, ship it".
+
+### 🧠 Memory that compounds across runs
+
+Every pipeline writes to a 4-layer memory system. The next task starts smarter, not from zero:
+
+- **Decisions** — past architectural verdicts. Next architect proposal builds on them instead of reinventing.
+- **Bugs** — verified bug pattern + fix. Next bug-hunter checks "have we seen this symptom before?" before re-investigating.
+- **Hotspots** — files with ≥ 2 prior bugs are auto-flagged as fragile; touching them forces the `architect` gate ON.
+- **Conventions** — project-specific style learned from accepted final-reviewer comments. Next implementer follows them automatically.
+
+The dispatcher reads this memory before every new task and surfaces matches: *"Similar past task last Tuesday took /quick-fix → success → recommend /quick-fix"*. The longer you use it, the better the routing.
+
+### ⚡ Fast where it matters
+
+- **Lookups answer inline** in seconds, not after a 60-second pipeline. "Where is the auth check?" returns the file path + line, doesn't spawn agents.
+- **Small fixes use 4 agents, not 6** — skips the planner + architect stages when scope is small. Same reviewer though — that's non-negotiable.
+- **Dispatcher overhead is negligible** — one haiku call to classify, then it hands off to the right pipeline.
+
+### 🚦 Catches mistakes BEFORE they cost real money
+
+The expensive part of bad AI code isn't the tokens — it's discovering the bug in production and unwinding it. agentcohort gates that:
+
+- **Wrong architecture?** Caught at the architect gate (1 premium call deep), not at code review (whole pipeline deep). The wasted work is the architect call, not the implementer + tests + reviewer chain.
+- **Wrong root cause?** Caught at the root-cause gate. `bug-fixer` never runs on a faulty hypothesis. No "we fixed the wrong thing" embarrassment in PR review.
+- **Scope creep?** Plan gate locks the exact files + tests before any code is written. If the planner says 3 files and the implementer touches 7, the diff fails review automatically.
 
 ## Install
 
@@ -40,19 +86,6 @@ This page takes 8s to render, profile it
 ```
 
 The dispatcher classifies the task, prints a proposed plan with estimated cost band, and waits for your approval before any agent runs.
-
-## Why it saves you money
-
-The dispatcher matches agent count *and* model strength to task complexity instead of running a one-size-fits-all pipeline.
-
-| Task type | Naïve (always full pipeline) | With agentcohort | Savings |
-|---|---|---|---|
-| Lookups — "where is X" | full pipeline | inline answer, 0 agents | **~100%** |
-| Small bug fix | 6 agents, 2× opus | `/quick-fix` — 4 agents, 1× opus | **~45%** |
-| Normal feature / bug | full pipeline | full pipeline | 0% |
-| Sensitive (auth / schema / cache) | full pipeline | full **+ forced** architect + expert-council | **−20%** (intentional) |
-
-**Typical project mix: ~50-70% lower spend.** Validate on your own project with `agentcohort stats --compare-naive`.
 
 ## Features at a glance
 
