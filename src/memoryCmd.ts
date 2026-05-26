@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } fr
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { v4 as uuidv4 } from 'uuid';
+import { RunIndexEvent } from './runIndexSchema';
 import {
   COLLECTION_NAMES,
   CollectionName,
@@ -469,3 +470,144 @@ function makeAutoMatcher(cwd: string): (entry: any) => boolean {
   };
 }
 
+// ============================================================================
+// memory list-runs (v0.10.1)
+// ============================================================================
+
+export interface RunSummary {
+  run_id: string;
+  ts_start: string;
+  ts_end: string | null;
+  pipeline: string;
+  tier: number | null;
+  task_summary: string | null;
+  outcome: 'success' | 'aborted' | 'failed' | 'running';
+  duration_ms: number | null;
+  agents_run: string[] | null;
+  gates_fired: string[] | null;
+}
+
+export interface MemoryListRunsOptions {
+  cwd: string;
+  limit?: number;
+  since?: string;
+}
+
+export interface MemoryListRunsResult { runs: RunSummary[]; }
+
+export function runMemoryListRuns(opts: MemoryListRunsOptions): MemoryListRunsResult {
+  const indexPath = join(opts.cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  const events = readJsonl<RunIndexEvent>(indexPath);
+
+  const byRun = new Map<string, { start?: any; end?: any }>();
+  for (const e of events) {
+    if (e.event === 'start' || e.event === 'end') {
+      const slot = byRun.get(e.run_id) ?? {};
+      if (e.event === 'start') slot.start = e;
+      else slot.end = e;
+      byRun.set(e.run_id, slot);
+    }
+  }
+
+  const runs: RunSummary[] = [];
+  for (const [run_id, { start, end }] of byRun) {
+    if (!start) continue;
+    runs.push({
+      run_id,
+      ts_start: start.ts,
+      ts_end: end?.ts ?? null,
+      pipeline: start.pipeline,
+      tier: start.tier ?? null,
+      task_summary: start.task_summary ?? null,
+      outcome: end?.outcome ?? 'running',
+      duration_ms: end ? new Date(end.ts).getTime() - new Date(start.ts).getTime() : null,
+      agents_run: end?.agents_run ?? null,
+      gates_fired: end?.gates_fired ?? null,
+    });
+  }
+
+  runs.sort((a, b) => new Date(b.ts_start).getTime() - new Date(a.ts_start).getTime());
+
+  if (opts.since) {
+    const cutoff = Date.now() - parseDuration(opts.since);
+    const filtered = runs.filter((r) => new Date(r.ts_start).getTime() >= cutoff);
+    if (opts.limit !== undefined && filtered.length > opts.limit) {
+      return { runs: filtered.slice(0, opts.limit) };
+    }
+    return { runs: filtered };
+  }
+  if (opts.limit !== undefined && runs.length > opts.limit) {
+    return { runs: runs.slice(0, opts.limit) };
+  }
+  return { runs };
+}
+
+// ============================================================================
+// memory scan-hotspots (v0.10.1)
+// ============================================================================
+
+export interface MemoryScanHotspotsOptions {
+  cwd: string;
+  threshold: number;
+  windowDays?: number;  // default 30
+}
+
+export interface MemoryScanHotspotsResult {
+  hotspotCount: number;
+  perFile: Record<string, number>;
+}
+
+export function runMemoryScanHotspots(opts: MemoryScanHotspotsOptions): MemoryScanHotspotsResult {
+  const windowDays = opts.windowDays ?? 30;
+  const cutoffTs = Date.now() - windowDays * 86_400_000;
+
+  const bugsPath = pathFor(opts.cwd, 'bugs');
+  const bugs = readJsonl<any>(bugsPath).filter(
+    (b) => new Date(b.ts).getTime() >= cutoffTs,
+  );
+
+  const counts = new Map<string, { count: number; ids: string[] }>();
+  for (const b of bugs) {
+    const files: string[] = Array.isArray(b?.body?.affected_files) ? b.body.affected_files : [];
+    for (const f of files) {
+      const slot = counts.get(f) ?? { count: 0, ids: [] };
+      slot.count += 1;
+      if (slot.ids.length < 10) slot.ids.push(b.id);
+      counts.set(f, slot);
+    }
+  }
+
+  const qualifying: Array<[string, { count: number; ids: string[] }]> = [];
+  for (const [file, info] of counts) {
+    if (info.count >= opts.threshold) qualifying.push([file, info]);
+  }
+
+  const hotPath = pathFor(opts.cwd, 'hotspots');
+  const lock = acquireLock(hotPath);
+  try {
+    rewriteJsonl<any>(hotPath, () => qualifying.map(([file, info]) => ({
+      id: uuidv4(),
+      ts: new Date().toISOString(),
+      run_id: null,
+      source: 'cli' as const,
+      confidence: 1.0,
+      verified: true,
+      stale: false,
+      context: {
+        files: [file],
+        commit: currentCommit(opts.cwd),
+        task_summary: `hotspot scan for ${file}`,
+      },
+      body: {
+        file_path: file,
+        bug_count: info.count,
+        recent_bug_ids: info.ids,
+        fragility_score: Math.min(1.0, info.count / 10),
+      },
+    })));
+  } finally { releaseLock(lock); }
+
+  const perFile: Record<string, number> = {};
+  for (const [file, info] of qualifying) perFile[file] = info.count;
+  return { hotspotCount: qualifying.length, perFile };
+}
