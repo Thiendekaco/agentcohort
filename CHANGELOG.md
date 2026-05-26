@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/Thiendekaco/agentcohort/compare/v0.11.0...v0.11.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* ship 0.11.1 — README slim + topical docs/ split ([#67](https://github.com/Thiendekaco/agentcohort/issues/67)) ([2649c19](https://github.com/Thiendekaco/agentcohort/commit/2649c19808588eb26a544d5cd693ecb6c3160f23))
+
 ## [0.11.0](https://github.com/Thiendekaco/agentcohort/compare/v0.10.0...v0.11.0) (2026-05-26)
 
 
