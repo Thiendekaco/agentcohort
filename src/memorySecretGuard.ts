@@ -7,7 +7,7 @@
  * detection for anything that slipped through.
  *
  * Each pattern is documented at:
- *   docs/memory/secret-patterns.md
+ *   docs/memory.md#secret-patterns
  */
 
 export interface SecretPattern {
