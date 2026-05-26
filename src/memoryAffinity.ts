@@ -25,22 +25,22 @@ export interface MemoryAffinityEntry {
 export type MemoryAffinityMap = Readonly<Record<string, MemoryAffinityEntry>>;
 
 export const DEFAULT_MEMORY_AFFINITY: MemoryAffinityMap = {
-  'repo-scout':            { reads: ['scratch'],                            writes: ['scratch'] },
-  'solution-architect':    { reads: ['decisions', 'scratch'],               writes: ['decisions', 'scratch'] },
-  'feature-planner':       { reads: ['scratch'],                            writes: ['scratch'] },
-  'feature-implementer':   { reads: ['scratch'],                            writes: ['scratch'] },
-  'test-verifier':         { reads: ['scratch'],                            writes: ['scratch', 'verifications'] },
-  'final-reviewer':        { reads: ['scratch'],                            writes: ['scratch', 'verifications'] },
-  'bug-hunter':            { reads: ['bugs', 'scratch'],                    writes: ['scratch'] },
-  'root-cause-analyst':    { reads: ['bugs', 'scratch'],                    writes: ['scratch'] },
-  'reproduction-engineer': { reads: ['scratch'],                            writes: ['scratch'] },
-  'regression-guard':      { reads: ['bugs', 'scratch'],                    writes: ['scratch', 'verifications'] },
-  'bug-fixer':             { reads: ['bugs', 'scratch'],                    writes: ['bugs', 'scratch'] },
-  'performance-hunter':    { reads: ['scratch'],                            writes: ['scratch'] },
-  'perf-optimizer':        { reads: ['scratch'],                            writes: ['scratch'] },
-  'perf-reviewer':         { reads: ['scratch'],                            writes: ['scratch'] },
-  'expert-council':        { reads: ['decisions', 'bugs', 'scratch'],       writes: ['scratch', 'audit'] },
-  'dispatcher':            { reads: ['audit'],                              writes: ['audit'] },
+  'repo-scout':            { reads: ['scratch', 'module-map', 'conventions'],   writes: ['scratch'] },
+  'solution-architect':    { reads: ['decisions', 'scratch', 'conventions'],    writes: ['decisions', 'scratch'] },
+  'feature-planner':       { reads: ['scratch', 'conventions'],                 writes: ['scratch'] },
+  'feature-implementer':   { reads: ['scratch', 'conventions'],                 writes: ['scratch'] },
+  'test-verifier':         { reads: ['scratch'],                                writes: ['scratch', 'verifications'] },
+  'final-reviewer':        { reads: ['scratch', 'conventions'],                 writes: ['scratch', 'verifications', 'conventions'] },
+  'bug-hunter':            { reads: ['bugs', 'scratch', 'hotspots'],            writes: ['scratch'] },
+  'root-cause-analyst':    { reads: ['bugs', 'scratch'],                        writes: ['scratch'] },
+  'reproduction-engineer': { reads: ['scratch'],                                writes: ['scratch'] },
+  'regression-guard':      { reads: ['bugs', 'scratch', 'hotspots'],            writes: ['scratch', 'verifications'] },
+  'bug-fixer':             { reads: ['bugs', 'scratch', 'hotspots'],            writes: ['bugs', 'scratch'] },
+  'performance-hunter':    { reads: ['scratch', 'hotspots'],                    writes: ['scratch'] },
+  'perf-optimizer':        { reads: ['scratch'],                                writes: ['scratch'] },
+  'perf-reviewer':         { reads: ['scratch'],                                writes: ['scratch'] },
+  'expert-council':        { reads: ['decisions', 'bugs', 'scratch'],           writes: ['scratch', 'audit'] },
+  'dispatcher':            { reads: ['audit', 'hotspots'],                      writes: ['audit'] },
 };
 
 export function resolveMemoryAffinity(

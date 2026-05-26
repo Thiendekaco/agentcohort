@@ -72,3 +72,21 @@ describe('affinityFor', () => {
     expect(a.writes).toEqual([]);
   });
 });
+
+describe('DEFAULT_MEMORY_AFFINITY — v0.10.1 collection additions', () => {
+  it('dispatcher reads hotspots (for fragility detection)', () => {
+    expect(DEFAULT_MEMORY_AFFINITY['dispatcher'].reads).toContain('hotspots');
+  });
+  it('repo-scout reads module-map (orientation)', () => {
+    expect(DEFAULT_MEMORY_AFFINITY['repo-scout'].reads).toContain('module-map');
+  });
+  it('repo-scout reads conventions', () => {
+    expect(DEFAULT_MEMORY_AFFINITY['repo-scout'].reads).toContain('conventions');
+  });
+  it('final-reviewer writes conventions (learned from review comments)', () => {
+    expect(DEFAULT_MEMORY_AFFINITY['final-reviewer'].writes).toContain('conventions');
+  });
+  it('bug-fixer reads hotspots (avoid known-fragile patterns)', () => {
+    expect(DEFAULT_MEMORY_AFFINITY['bug-fixer'].reads).toContain('hotspots');
+  });
+});

@@ -27,7 +27,7 @@ model: haiku
 <!-- agentcohort-memory-start -->
 4. Memory layer (agentcohort v0.10+).
    This agent's memory affinity:
-   - Reads: audit
+   - Reads: audit, hotspots
    - Writes: audit
 
    Your prompt contains a line like `Run ID: <uuid>` from the dispatcher.
@@ -56,6 +56,41 @@ model: haiku
    **NEVER store secrets** — API keys, tokens, .env content, private keys,
    stacktraces with creds. The CLI rejects what it detects, but YOU are the
    first line of defense. If unsure, redact aggressively.
+
+   At the VERY START of your work, BEFORE reading any memory:
+     `agentcohort run start --stage=dispatcher --run-id=<RUN_ID>`
+
+   At the VERY END, AFTER your last memory write:
+     `agentcohort run end --stage=dispatcher --run-id=<RUN_ID> --outcome=<success|failed|aborted>`
+
+
+## Memory-aware routing (v0.10.1+)
+
+At the START of classification, before producing the plan:
+
+1. **Read recent runs**: `agentcohort memory list-runs --limit=50 --json`
+   For each past run, compute Jaccard similarity between its `task_summary` and
+   the user's current task: tokenize (lowercase, alphanumeric split, length > 1),
+   drop stopwords (the/a/to/in/for/on/with/and/or/of/is/was/be/at/by/as/from/this/that),
+   then `|intersection| / |union|`. If any past run scores ≥ **0.3**, surface in
+   your classification output as: `Similar past task <date> (run <short-id>): /<pipeline> → <outcome>`.
+
+2. **Read hotspots**: `agentcohort memory read hotspots --json`
+   If the user's task mentions any file in hotspots with `fragility_score ≥ 0.5`:
+   - Force the `architect` gate ON for this run in your plan output.
+   - Add note: `File <path> is fragile (<N> prior bugs, score <X>) — architect gate forced ON`.
+
+3. **Read past decisions for mentioned files**:
+   `agentcohort memory read decisions --filter=context.files=<path> --limit=5 --with-verifications`
+   For each verified past decision, mention it in your output for the architect to consider.
+
+4. **Record your routing reasoning** (audit trail):
+   `agentcohort gate record --run-id=$RUN_ID --gate=architect --outcome=auto-skipped \
+     --proposed-content="<your routing decision summary>" --posing-agent=dispatcher`
+   Use `outcome=auto-skipped` when memory suggested a route and no human gate fired.
+   Use `approved` when you forced the architect gate ON.
+   The normal flow applies if the human gate actually fires later.
+
 <!-- agentcohort-memory-end -->
 4. Your role below is the default playbook. User CLAUDE.md, skills,
    and OpenWolf-recorded rules override this playbook on conflict.
