@@ -8,6 +8,24 @@
 
 agentcohort installs **16 specialist subagents**, **9 workflow pipelines**, and a **4-layer memory system** into any project. A smart dispatcher right-sizes the pipeline to your task — small fixes stay cheap, sensitive changes (auth / schema / payment) get the full architect + expert-council treatment.
 
+## 🎯 The killer feature: smart routing
+
+You type a task in Claude Code. agentcohort's dispatcher reads it, classifies the complexity, and **automatically picks the right team of agents** — strong models (opus) for hard work, cheap models (haiku / sonnet) for easy work. No more burning premium tokens on "where is X?". No more under-powering a schema migration.
+
+| Your task | Dispatcher routes to | Agents used (model tier) | Cost class |
+|---|---|---|---|
+| **"Where is the auth check?"** | inline answer | **0 agents** | **~free** |
+| **"Fix off-by-one in invoice totals"** | `/quick-fix` | bug-fixer (sonnet) → regression-guard (sonnet) → test-verifier (sonnet) → final-reviewer (opus) | **low** |
+| **"Add date-range filter to /transactions"** | `/quick-feature` | scout (haiku) → implementer (opus) → test-verifier (sonnet) → final-reviewer (opus) | **medium** |
+| **"Refactor the auth middleware"** | `/dev-flow` + architect gate | scout (haiku) → architect (opus) → planner (sonnet) → implementer (opus) → tester (sonnet) → reviewer (opus) | **high** |
+| **"Migrate users table to UUID PKs"** | `/dev-flow` + **forced** architect + expert-council | 7+ agents, premium-heavy + human approval gates | **premium** *(worth it)* |
+
+**The insight:** easy tasks shouldn't pay the price of hard tasks. Hard tasks shouldn't get the depth of easy ones. The dispatcher does this routing on every request — you just type your task in natural language, no slash commands needed.
+
+Cheap models do the cheap work (scouting, dispatch classification, simple tests). Premium models do the premium work (architecture choices, root-cause analysis, final review). The dispatcher itself runs on haiku — overhead is negligible.
+
+**Result: 50-70% lower Claude bill on typical project mix.** Lookups stay free, normal work stays normal, sensitive changes get *more* care on purpose. Validate on YOUR project with `agentcohort stats --compare-naive`.
+
 ## The problem with default Claude Code
 
 You ask Claude to "add a date-range filter to /transactions". It writes code in one shot. Looks fine. You merge. Then:
@@ -30,13 +48,9 @@ agentcohort's thesis: **AI coding is bottlenecked by discipline, not capability.
 
 What you get is Claude Code that behaves like a disciplined senior team, not a brilliant intern.
 
-## What this gives you
+## What else you get
 
-### 💰 Lower token bill (50-70% on typical project mix)
-
-The smart dispatcher right-sizes every task instead of running a one-size-fits-all pipeline. Lookups answer inline (no agents, near 100% saved vs full pipeline). Small bug fixes use 4 agents instead of 6 (~45% saved). Normal+ features keep the full pipeline. Sensitive changes (auth / schema / payment / cache) intentionally get *more* — forced architect + expert-council gates pay for themselves by catching design mistakes early.
-
-Validate on YOUR project after ~10 real tasks: `agentcohort stats --compare-naive`. Your number will depend on your task mix (lookup-heavy projects save more; deep-feature-heavy projects less). The detailed breakdown is in [docs/agents.md](docs/agents.md#cost-savings--full-breakdown).
+Beyond the cost savings of smart routing:
 
 ### 🛡️ Higher quality output
 
