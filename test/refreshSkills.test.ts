@@ -268,6 +268,48 @@ describe('runRefreshSkills — empty target', () => {
   });
 });
 
+describe('runRefreshSkills — v0.10.1 dispatcher memory-lookup', () => {
+  it('refresh re-bakes memory-lookup block into dispatcher boot directive', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcohort-refresh-v10_1-'));
+    try {
+      const templatesDir = join(__dirname, '..', 'src', 'templates');
+      await runInit({
+        cwd: dir,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 25, 12, 0, 0),
+        templatesDir,
+        models: { ...DEFAULT_MODELS },
+        skills: [],
+        affinity: {},
+      } as any);
+      const target = join(dir, '.claude/agents/dispatcher.md');
+      const text = readFileSync(target, 'utf8');
+      const tampered = text.replace(
+        /<!-- agentcohort-memory-start -->[\s\S]*?<!-- agentcohort-memory-end -->/,
+        '<!-- agentcohort-memory-start -->\nSTALE\n<!-- agentcohort-memory-end -->',
+      );
+      writeFileSync(target, tampered);
+      runRefreshSkills({
+        cwd: dir,
+        templatesDir,
+        models: { ...DEFAULT_MODELS },
+        skills: [],
+        affinity: {},
+        dryRun: false,
+        backup: false,
+      });
+      const after = readFileSync(target, 'utf8');
+      expect(after).toContain('Memory-aware routing');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('runRefreshSkills — also refreshes memory section', () => {
   it('rewrites stale memory section while leaving the rest alone', async () => {
     const cwd = project();
