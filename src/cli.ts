@@ -1452,6 +1452,7 @@ function formatDoctorReport(report: DoctorReport): string {
     ok: paint('✓', 'green'),
     warn: paint('⚠', 'yellow'),
     error: paint('✗', 'red'),
+    info: paint('ℹ', 'cyan'),
   };
   const out: string[] = [];
   out.push(paint('\nAgentcohort Doctor', 'bold', 'cyan'));

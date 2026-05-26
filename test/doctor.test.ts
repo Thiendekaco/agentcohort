@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import {
   mkdtempSync,
   mkdirSync,
@@ -8,12 +8,18 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import { runDoctor } from '../src/doctor';
 import { runInit } from '../src/installer';
 import { DEFAULT_MODELS } from '../src/defaults';
+import { runMemoryInit, runMemoryWrite } from '../src/memoryCmd';
 
 const TEMPLATES = resolve(process.cwd(), 'src', 'templates');
 const tmps: string[] = [];
+
+function bundledTemplatesDir(): string {
+  return TEMPLATES;
+}
 
 function project(): string {
   const d = mkdtempSync(join(tmpdir(), 'af-doctor-'));
@@ -46,13 +52,13 @@ describe('runDoctor — healthy install', () => {
     const report = runDoctor({ cwd, templatesDir: TEMPLATES });
     expect(report.summary).toBe('healthy');
     expect(report.exitCode).toBe(0);
-    // Every check is `ok` — no warnings or errors.
+    // Every check is `ok` or `info` — no warnings or errors.
     for (const s of report.sections) {
       for (const c of s.checks) {
         expect(
-          c.severity,
+          ['ok', 'info'],
           `${s.name} / ${c.id} unexpectedly non-ok: ${c.message}`
-        ).toBe('ok');
+        ).toContain(c.severity);
       }
     }
   });
@@ -346,6 +352,74 @@ Body.
     const local = agentsSection.checks.find((c) => c.id === 'agents.local');
     expect(local).toBeDefined();
     expect(local!.detail).toContain('my-new.md');
+  });
+});
+
+describe('doctor — memory checks', () => {
+  let memDir: string;
+  beforeEach(() => {
+    memDir = mkdtempSync(join(tmpdir(), 'agentcohort-doctor-mem-'));
+    execSync('git init -q', { cwd: memDir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: memDir });
+  });
+  afterEach(() => rmSync(memDir, { recursive: true, force: true }));
+
+  function memorySection(cwd: string) {
+    const r = runDoctor({ cwd, templatesDir: bundledTemplatesDir() });
+    return r.sections.find((s) => s.name === 'Memory')!;
+  }
+
+  it('memory.dir-present is "info" when uninitialized', () => {
+    const section = memorySection(memDir);
+    const check = section.checks.find((c) => c.id === 'memory.dir-present');
+    expect(check?.severity).toBe('info');
+  });
+
+  it('memory.dir-present is "ok" after init', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    const section = memorySection(memDir);
+    const check = section.checks.find((c) => c.id === 'memory.dir-present');
+    expect(check?.severity).toBe('ok');
+  });
+
+  it('memory.collection-sizes warns when a collection exceeds 500 entries', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    const path = join(memDir, '.agentcohort/memory/shared/decisions.jsonl');
+    const lines = Array.from({ length: 501 }, (_, i) => JSON.stringify({
+      id: '00000000-0000-4000-8000-' + String(i).padStart(12, '0'),
+      ts: new Date().toISOString(),
+      run_id: null, source: 'human', confidence: 1, verified: true, stale: false,
+      context: { files: [], commit: null, task_summary: 't' },
+      body: { approach_chosen: 'x', alternatives_considered: [], trade_offs: '', gate_outcome: 'approved' },
+    }));
+    writeFileSync(path, lines.join('\n') + '\n');
+    const section = memorySection(memDir);
+    const check = section.checks.find((c) => c.id === 'memory.collection-sizes');
+    expect(check?.severity).toBe('warn');
+  });
+
+  it('memory.git-policy ok when shared committed and local gitignored', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    const section = memorySection(memDir);
+    const check = section.checks.find((c) => c.id === 'memory.git-policy');
+    expect(check?.severity).toBe('ok');
+  });
+
+  it('memory.stale-ratio warns when > 30% stale', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    const path = join(memDir, '.agentcohort/memory/shared/decisions.jsonl');
+    const lines = Array.from({ length: 10 }, (_, i) => JSON.stringify({
+      id: '00000000-0000-4000-8000-' + String(i).padStart(12, '0'),
+      ts: new Date().toISOString(),
+      run_id: null, source: 'human', confidence: 1, verified: true,
+      stale: i < 4, // 4/10 = 40% stale
+      context: { files: [], commit: null, task_summary: 't' },
+      body: { approach_chosen: 'x', alternatives_considered: [], trade_offs: '', gate_outcome: 'approved' },
+    }));
+    writeFileSync(path, lines.join('\n') + '\n');
+    const section = memorySection(memDir);
+    const check = section.checks.find((c) => c.id === 'memory.stale-ratio');
+    expect(check?.severity).toBe('warn');
   });
 });
 
