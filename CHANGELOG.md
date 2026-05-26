@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/Thiendekaco/agentcohort/compare/v0.10.0...v0.11.0) (2026-05-26)
+
+
+### Features
+
+* ship 0.10.1 — memory extensions (3 collections + 6 commands + dispatcher routing) ([#64](https://github.com/Thiendekaco/agentcohort/issues/64)) ([d32bd3e](https://github.com/Thiendekaco/agentcohort/commit/d32bd3e579733c710c1a0ee5ea04c262b91bc961))
+
 ## [0.10.0](https://github.com/Thiendekaco/agentcohort/compare/v0.9.2...v0.10.0) (2026-05-26)
 
 
