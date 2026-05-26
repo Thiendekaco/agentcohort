@@ -227,6 +227,7 @@ export interface MemoryReadOptions {
   since?: string;
   runId?: string;
   withVerifications?: boolean;
+  noStaleCheck?: boolean;   // NEW (v0.10.1)
 }
 
 export interface MemoryReadResult { entries: unknown[]; }
@@ -286,6 +287,30 @@ export function runMemoryRead(opts: MemoryReadOptions): MemoryReadResult {
         _verification_evidence: v.body.evidence,
         _verification_by_stage: v.body.by_stage,
       };
+    });
+  }
+
+  // Read-time stale auto-detection (v0.10.1) — lazy git diff cached per-commit.
+  if (!opts.noStaleCheck && collection !== 'scratch') {
+    const cache = new Map<string, Set<string>>();
+    entries = entries.map((e) => {
+      const commit = e?.context?.commit;
+      const files: string[] = e?.context?.files ?? [];
+      if (!commit || files.length === 0) {
+        return { ...e, _effective_stale: !!e.stale };
+      }
+      let changed = cache.get(commit);
+      if (!changed) {
+        try {
+          const out = execSync(`git diff --name-only ${commit}..HEAD`, {
+            cwd: opts.cwd, stdio: ['ignore', 'pipe', 'ignore'],
+          }).toString();
+          changed = new Set(out.split('\n').map((l) => l.trim()).filter(Boolean));
+        } catch { changed = new Set(); }
+        cache.set(commit, changed);
+      }
+      const gitStale = files.some((f) => changed!.has(f));
+      return { ...e, _effective_stale: !!e.stale || gitStale };
     });
   }
 
