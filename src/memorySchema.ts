@@ -73,9 +73,39 @@ export const VERIFICATION_BODY = z.object({
   by_stage: z.string(),
 });
 
+// hotspots.jsonl — Layer 2 (v0.10.1): file/module fragility
+export const HOTSPOT_BODY = z.object({
+  file_path: z.string().min(1),
+  bug_count: z.number().int().nonnegative(),
+  recent_bug_ids: z.array(z.string().uuid()),
+  fragility_score: z.number().min(0).max(1),
+  notes: z.string().max(500).optional(),
+});
+
+// conventions.jsonl — Layer 2 (v0.10.1): accumulated style/conventions
+export const CONVENTION_BODY = z.object({
+  rule: z.string().min(1),
+  scope: z.string(),
+  examples_good: z.array(z.string()).default([]),
+  examples_bad: z.array(z.string()).default([]),
+  derivation: z.enum(['user-confirmed', 'final-reviewer-derived']),
+});
+
+// module-map.jsonl — Layer 2 (v0.10.1): high-level project structure
+export const MODULE_MAP_BODY = z.object({
+  module: z.string().min(1),
+  description: z.string().min(1).max(500),
+  responsibilities: z.array(z.string()).min(1),
+  key_files: z.array(z.string()).default([]),
+  dependencies: z.array(z.string()).default([]),
+});
+
 // ---- collection name dispatch --------------------------------------
 
-export const COLLECTION_NAMES = ['decisions', 'bugs', 'scratch', 'audit', 'verifications'] as const;
+export const COLLECTION_NAMES = [
+  'decisions', 'bugs', 'scratch', 'audit', 'verifications',
+  'hotspots', 'conventions', 'module-map',
+] as const;
 export type CollectionName = (typeof COLLECTION_NAMES)[number];
 
 export function bodySchemaFor(name: CollectionName): z.ZodTypeAny {
@@ -85,6 +115,9 @@ export function bodySchemaFor(name: CollectionName): z.ZodTypeAny {
     case 'scratch':       return SCRATCH_BODY;
     case 'audit':         return AUDIT_BODY;
     case 'verifications': return VERIFICATION_BODY;
+    case 'hotspots':     return HOTSPOT_BODY;
+    case 'conventions':  return CONVENTION_BODY;
+    case 'module-map':   return MODULE_MAP_BODY;
     default: {
       const _exhaust: never = name;
       throw new Error(`unknown collection: ${String(_exhaust)}`);
@@ -98,3 +131,6 @@ export type BugBody          = z.infer<typeof BUG_BODY>;
 export type ScratchBody      = z.infer<typeof SCRATCH_BODY>;
 export type AuditBody        = z.infer<typeof AUDIT_BODY>;
 export type VerificationBody = z.infer<typeof VERIFICATION_BODY>;
+export type HotspotBody     = z.infer<typeof HOTSPOT_BODY>;
+export type ConventionBody  = z.infer<typeof CONVENTION_BODY>;
+export type ModuleMapBody   = z.infer<typeof MODULE_MAP_BODY>;
