@@ -15,11 +15,16 @@ import {
   extractSkillsRegion,
 } from './skillsBoot';
 import {
+  injectMemorySection,
+  MEMORY_MARKERS,
+} from './memoryBoot';
+import {
   resolveAffinity,
   relevantSkills,
   SkillAffinity,
 } from './skillAffinity';
 import type { Skill } from './skills';
+import type { MemoryAffinityEntry } from './memoryAffinity';
 
 /**
  * `agentcohort refresh-skills` — re-bake the boot-directive skill list
@@ -78,6 +83,8 @@ export interface RefreshOptions {
   skills: readonly Skill[];
   /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
   affinity?: SkillAffinity;
+  /** Per-agent memory affinity overrides (merged with DEFAULT_MEMORY_AFFINITY). */
+  memoryAffinity?: Record<string, MemoryAffinityEntry>;
   dryRun: boolean;
   /** Back up each rewritten file before overwriting. */
   backup: boolean;
@@ -144,13 +151,14 @@ export function runRefreshSkills(opts: RefreshOptions): RefreshResult {
     }
 
     // Build the canonical "what init would write right now" for this
-    // file: render → inject affinity-filtered current skills → stamp.
+    // file: render → inject affinity-filtered current skills → inject memory → stamp.
     const agentName = f.replace(/\.md$/, '');
     const bundledRaw = readFileSync(bundledPath, 'utf8');
     const rendered = renderAgentTemplate(bundledRaw, opts.models);
     const relevant = relevantSkills(agentName, opts.skills, affinity);
     const withSkills = injectSkillsList(rendered, relevant);
-    const fresh = stampTemplate(withSkills);
+    const withMemory = injectMemorySection(withSkills, agentName, opts.memoryAffinity);
+    const fresh = stampTemplate(withMemory);
 
     if (fresh === installed) {
       entries.push({
@@ -208,18 +216,24 @@ export function runRefreshSkills(opts: RefreshOptions): RefreshResult {
 const STAMP_LINE_RE = /^_agentcohort_hash:[ \t]+\S+[ \t]*\r?\n/m;
 const SKILLS_REGION_RE =
   /<!-- agentcohort-skills-start -->[\s\S]*?<!-- agentcohort-skills-end -->/;
+const MEMORY_REGION_RE =
+  /<!-- agentcohort-memory-start -->[\s\S]*?<!-- agentcohort-memory-end -->/;
 
 /**
- * Return the file body with two volatile pieces removed:
+ * Return the file body with the volatile pieces removed:
  *   1. The integrity stamp line (changes whenever the body changes).
- *   2. The skill region between markers (the whole point of refresh).
+ *   2. The skill region between markers (refreshed by this command).
+ *   3. The memory region between markers (also refreshed by this command).
  *
  * What remains must match byte-for-byte between an "installed" file
  * and the "what init would write today" version when the user has
- * NOT hand-edited anything outside the skill region.
+ * NOT hand-edited anything outside the managed regions.
  */
 function bodyOutsideSkillRegion(text: string): string {
-  return text.replace(STAMP_LINE_RE, '').replace(SKILLS_REGION_RE, '');
+  return text
+    .replace(STAMP_LINE_RE, '')
+    .replace(SKILLS_REGION_RE, '')
+    .replace(MEMORY_REGION_RE, '');
 }
 
 function uniqueBackupPath(target: string, date: Date): string {
