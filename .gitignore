@@ -6,6 +6,9 @@ coverage/
 .idea/
 .claude/settings.local.json
 
+# Isolated workspaces created by superpowers:using-git-worktrees.
+.worktrees/
+
 # Spec & plan docs live locally as personal notes; not part of the
 # shipped package.
 docs/superpowers/

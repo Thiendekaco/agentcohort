@@ -13,6 +13,7 @@ import { runInit } from '../src/installer';
 import { DEFAULT_MODELS } from '../src/defaults';
 import type { Skill } from '../src/skills';
 import type { SkillAffinity } from '../src/skillAffinity';
+import { MEMORY_MARKERS } from '../src/memoryBoot';
 
 const BUNDLED_AGENTS = [
   'bug-fixer',
@@ -264,5 +265,60 @@ describe('runRefreshSkills — empty target', () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.entries).toEqual([]);
+  });
+});
+
+describe('runRefreshSkills — also refreshes memory section', () => {
+  it('rewrites stale memory section while leaving the rest alone', async () => {
+    const cwd = project();
+    await installWithSkills(cwd, [makeSkill('foo')]);
+    // Tamper with bug-fixer.md to make ONLY the memory section stale
+    const target = join(cwd, '.claude/agents/bug-fixer.md');
+    const text = readFileSync(target, 'utf8');
+    const tampered = text.replace(
+      new RegExp(`${MEMORY_MARKERS.start}[\\s\\S]*?${MEMORY_MARKERS.end}`),
+      `${MEMORY_MARKERS.start}\nSTALE MEMORY PLACEHOLDER\n${MEMORY_MARKERS.end}`,
+    );
+    writeFileSync(target, tampered);
+
+    const result = runRefreshSkills({
+      cwd,
+      templatesDir: TEMPLATES,
+      models: { ...DEFAULT_MODELS },
+      skills: [makeSkill('foo')],
+      affinity: affinityForAll(['foo']),
+      dryRun: false,
+      backup: false,
+    });
+    const updated = result.entries.filter((e) => e.disposition === 'updated');
+    expect(updated.length).toBeGreaterThan(0);
+
+    const after = readFileSync(target, 'utf8');
+    expect(after).toContain(MEMORY_MARKERS.start);
+    expect(after).toContain(MEMORY_MARKERS.end);
+    expect(after).toContain('Reads: bugs, scratch');   // bug-fixer reads
+    expect(after).toContain('Writes: bugs, scratch');  // bug-fixer writes
+    expect(after).not.toContain('STALE MEMORY PLACEHOLDER');
+  });
+
+  it('skips local-override agents (_agentcohort_local: true)', async () => {
+    const cwd = project();
+    await installWithSkills(cwd, [makeSkill('foo')]);
+    const target = join(cwd, '.claude/agents/bug-fixer.md');
+    const text = readFileSync(target, 'utf8');
+    // Mark as local
+    const localized = text.replace(/^---\r?\n/, (match) => match + '_agentcohort_local: true\n');
+    writeFileSync(target, localized);
+
+    const result = runRefreshSkills({
+      cwd,
+      templatesDir: TEMPLATES,
+      models: { ...DEFAULT_MODELS },
+      skills: [makeSkill('foo')],
+      dryRun: false,
+      backup: false,
+    });
+    const entry = result.entries.find((e) => e.name === 'bug-fixer');
+    expect(entry?.disposition).toBe('skipped-local');
   });
 });

@@ -20,6 +20,8 @@ import type { Logger } from './logger';
 import { renderAgentTemplate } from './render';
 import { stampTemplate } from './stamp';
 import { injectSkillsList } from './skillsBoot';
+import { injectMemorySection } from './memoryBoot';
+import { runMemoryInit } from './memoryCmd';
 import {
   resolveAffinity,
   relevantSkills,
@@ -68,6 +70,11 @@ export interface InitOptions {
    * `{}` to use defaults only (no user override).
    */
   affinity?: SkillAffinity;
+  /**
+   * Memory affinity overrides for per-agent memory curation. When
+   * omitted the built-in DEFAULT_MEMORY_AFFINITY is used.
+   */
+  memoryAffinity?: Record<string, import('./memoryAffinity').MemoryAffinityEntry>;
   resolver?: ConflictResolver;
   now?: () => Date;
   logger?: Logger;
@@ -181,6 +188,14 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     }
   }
 
+  // Initialize the memory layer directory structure.
+  // Dry-run touches nothing. Interactive prompting for memory init is
+  // handled at the CLI layer (cli.ts) so that programmatic callers
+  // (tests, library usage) are never blocked on TTY input.
+  if (!options.dryRun && options.yes) {
+    runMemoryInit({ cwd: options.cwd, mode: 'default' });
+  }
+
   return { projectRoot, actions, dryRun: options.dryRun };
 
   // ---- per-entry handlers (closures over decide/record/doBackup) ----
@@ -204,9 +219,12 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     const withSkills = isAgent
       ? injectSkillsList(rendered, relevant)
       : rendered;
+    const withMemory = isAgent
+      ? injectMemorySection(withSkills, agentName, options.memoryAffinity)
+      : withSkills;
     // Stamp every installed agent and command so `agentcohort doctor`
     // can later distinguish unchanged / outdated / user-edited / unstamped.
-    const template = stampTemplate(withSkills);
+    const template = stampTemplate(withMemory);
     const existing = readIfExists(entry.targetAbsPath);
 
     if (existing === null) {

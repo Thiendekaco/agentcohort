@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import {
   mkdtempSync,
   mkdirSync,
@@ -8,12 +8,19 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import { runStatus } from '../src/status';
 import { runInit } from '../src/installer';
 import { DEFAULT_MODELS } from '../src/defaults';
+import { runMemoryInit, runMemoryWrite } from '../src/memoryCmd';
+import { v4 as uuidv4 } from 'uuid';
 
 const TEMPLATES = resolve(process.cwd(), 'src', 'templates');
 const tmps: string[] = [];
+
+function bundledTemplatesDir(): string {
+  return TEMPLATES;
+}
 
 function project(): string {
   const d = mkdtempSync(join(tmpdir(), 'af-status-'));
@@ -191,5 +198,32 @@ describe('runStatus — version', () => {
     const cwd = project();
     const report = runStatus({ cwd, templatesDir: TEMPLATES });
     expect(report.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe('status — memory section', () => {
+  let memDir: string;
+  beforeEach(() => {
+    memDir = mkdtempSync(join(tmpdir(), 'agentcohort-status-mem-'));
+    execSync('git init -q', { cwd: memDir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: memDir });
+  });
+  afterEach(() => rmSync(memDir, { recursive: true, force: true }));
+
+  it('reports memory.initialized=false when not initialized', () => {
+    const r = runStatus({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    expect(r.memory.initialized).toBe(false);
+  });
+
+  it('reports collection counts after writes', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    runMemoryWrite({
+      cwd: memDir, collection: 'decisions', source: 'solution-architect',
+      confidence: 1, verified: true, taskSummary: 't', runId: uuidv4(), files: [],
+      bodyJson: JSON.stringify({ approach_chosen: 'x', alternatives_considered: [], trade_offs: '', gate_outcome: 'approved' }),
+    });
+    const r = runStatus({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    expect(r.memory.initialized).toBe(true);
+    expect(r.memory.collections['decisions']).toBe(1);
   });
 });

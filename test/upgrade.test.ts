@@ -17,6 +17,7 @@ import {
 import { runInit } from '../src/installer';
 import { DEFAULT_MODELS } from '../src/defaults';
 import { parseStamp } from '../src/stamp';
+import { MEMORY_MARKERS } from '../src/memoryBoot';
 
 const TEMPLATES = resolve(process.cwd(), 'src', 'templates');
 const tmps: string[] = [];
@@ -371,6 +372,95 @@ describe('runUpgrade — leaves user-created files alone', () => {
     await runUpgrade(baseOpts(cwd));
     expect(existsSync(custom)).toBe(true);
     expect(readFileSync(custom, 'utf8')).toContain('my-helper');
+  });
+});
+
+describe('runUpgrade — memory markers', () => {
+  it('rewrites the memory section in every bundled agent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcohort-upgrade-mem-'));
+    try {
+      await runInit({
+        cwd: dir,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 20, 12, 0, 0),
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+      });
+      // Tamper with solution-architect.md to make the memory section stale
+      const target = join(dir, '.claude/agents/solution-architect.md');
+      const text = readFileSync(target, 'utf8');
+      const tampered = text.replace(
+        new RegExp(`${MEMORY_MARKERS.start}[\\s\\S]*?${MEMORY_MARKERS.end}`),
+        `${MEMORY_MARKERS.start}\nSTALE PLACEHOLDER\n${MEMORY_MARKERS.end}`,
+      );
+      writeFileSync(target, tampered);
+      // Run upgrade with force so it refreshes past the stamp mismatch
+      await runUpgrade({
+        cwd: dir,
+        templatesDir: TEMPLATES,
+        dryRun: false,
+        force: true,
+        backup: false,
+        interactive: false,
+        models: { ...DEFAULT_MODELS },
+      });
+      // Verify the memory section is refreshed
+      const after = readFileSync(target, 'utf8');
+      expect(after).toContain(MEMORY_MARKERS.start);
+      expect(after).toContain(MEMORY_MARKERS.end);
+      expect(after).toContain('Reads: decisions, scratch');
+      expect(after).not.toContain('STALE PLACEHOLDER');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips memory marker rewrite for local-override agents', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcohort-upgrade-mem-local-'));
+    try {
+      await runInit({
+        cwd: dir,
+        yes: true,
+        dryRun: false,
+        force: false,
+        backup: false,
+        interactive: false,
+        now: () => new Date(2026, 4, 20, 12, 0, 0),
+        templatesDir: TEMPLATES,
+        models: { ...DEFAULT_MODELS },
+      });
+      const localPath = join(dir, '.claude/agents/solution-architect.md');
+      const localBody = `---
+name: solution-architect
+description: Custom local override
+tools: Read
+model: opus
+_agentcohort_local: true
+---
+
+# Role
+
+My custom content.
+`;
+      writeFileSync(localPath, localBody, 'utf8');
+      await runUpgrade({
+        cwd: dir,
+        templatesDir: TEMPLATES,
+        dryRun: false,
+        force: true,
+        backup: false,
+        interactive: false,
+        models: { ...DEFAULT_MODELS },
+      });
+      // Content must be completely unchanged
+      expect(readFileSync(localPath, 'utf8')).toBe(localBody);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

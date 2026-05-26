@@ -44,6 +44,34 @@ export interface ParsedArgs {
   help: boolean;
   version: boolean;
   unknown: string[];
+
+  // ---- memory + run + gate flags (v0.10+) ----
+  runId: string | null;
+  collection: string | null;
+  bodyJson: string | null;
+  source: string | null;
+  confidence: number | null;
+  verifiedFlag: boolean | null;
+  taskSummary: string | null;
+  files: string[] | null;
+  filters: Record<string, string>;
+  limit: number | null;
+  since: string | null;
+  withVerifications: boolean;
+  commitAll: boolean;
+  gitignoreAll: boolean;
+  autoStale: boolean;
+  staleId: string | null;
+  unstale: boolean;
+  pipeline: string | null;
+  tier: number | null;
+  outcome: string | null;
+  agentsRun: string[] | null;
+  gatesFired: string[] | null;
+  gate: string | null;
+  reason: string | null;
+  proposedContent: string | null;
+  posingAgent: string | null;
 }
 
 const FLAGS: Record<string, keyof ParsedArgs> = {
@@ -70,6 +98,11 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
   '-h': 'help',
   '--version': 'version',
   '-v': 'version',
+  '--with-verifications': 'withVerifications',
+  '--commit-all':         'commitAll',
+  '--gitignore-all':      'gitignoreAll',
+  '--auto':               'autoStale',
+  '--unstale':            'unstale',
 };
 
 /**
@@ -77,11 +110,31 @@ const FLAGS: Record<string, keyof ParsedArgs> = {
  * form (`--flag value`) is intentionally NOT supported — it would
  * require lookahead and risks swallowing positionals on user typos.
  */
-const VALUE_FLAGS: Record<string, 'kind' | 'description' | 'model' | 'out'> = {
+const VALUE_FLAGS: Record<string, keyof ParsedArgs> = {
   '--kind': 'kind',
   '--description': 'description',
   '--model': 'model',
   '--out': 'out',
+  '--run-id': 'runId',
+  '--collection': 'collection',
+  '--json-body': 'bodyJson',
+  '--source': 'source',
+  '--confidence': 'confidence',
+  '--verified': 'verifiedFlag',
+  '--task-summary': 'taskSummary',
+  '--files': 'files',
+  '--limit': 'limit',
+  '--since': 'since',
+  '--id': 'staleId',
+  '--pipeline': 'pipeline',
+  '--tier': 'tier',
+  '--outcome': 'outcome',
+  '--agents-run': 'agentsRun',
+  '--gates-fired': 'gatesFired',
+  '--gate': 'gate',
+  '--reason': 'reason',
+  '--proposed-content': 'proposedContent',
+  '--posing-agent': 'posingAgent',
 };
 
 /** Pure, deterministic argument parser. Unknown tokens are collected, not thrown. */
@@ -114,16 +167,66 @@ export function parseArgs(argv: string[]): ParsedArgs {
     help: false,
     version: false,
     unknown: [],
+    // memory + run + gate flags (v0.10+)
+    runId: null,
+    collection: null,
+    bodyJson: null,
+    source: null,
+    confidence: null,
+    verifiedFlag: null,
+    taskSummary: null,
+    files: null,
+    filters: {},
+    limit: null,
+    since: null,
+    withVerifications: false,
+    commitAll: false,
+    gitignoreAll: false,
+    autoStale: false,
+    staleId: null,
+    unstale: false,
+    pipeline: null,
+    tier: null,
+    outcome: null,
+    agentsRun: null,
+    gatesFired: null,
+    gate: null,
+    reason: null,
+    proposedContent: null,
+    posingAgent: null,
   };
   for (const arg of argv) {
     if (arg.startsWith('--')) {
       const eqIdx = arg.indexOf('=');
       if (eqIdx !== -1) {
-        const key = arg.slice(0, eqIdx);
-        const value = arg.slice(eqIdx + 1);
-        const valueKey = VALUE_FLAGS[key];
+        const flagName = arg.slice(0, eqIdx);
+        const rawValue = arg.slice(eqIdx + 1);
+
+        // Special-case: --filter=key=val → store into filters record.
+        if (flagName === '--filter') {
+          const sepIdx = rawValue.indexOf('=');
+          if (sepIdx !== -1) {
+            const filterKey = rawValue.slice(0, sepIdx);
+            const filterVal = rawValue.slice(sepIdx + 1);
+            parsed.filters[filterKey] = filterVal;
+          } else {
+            parsed.unknown.push(arg);
+          }
+          continue;
+        }
+
+        const valueKey = VALUE_FLAGS[flagName];
         if (valueKey !== undefined) {
-          parsed[valueKey] = value;
+          // Apply type coercions for specific fields.
+          if (valueKey === 'confidence' || valueKey === 'limit' || valueKey === 'tier') {
+            (parsed as unknown as Record<string, number>)[valueKey] = Number(rawValue);
+          } else if (valueKey === 'verifiedFlag') {
+            (parsed as unknown as Record<string, boolean>)[valueKey] = rawValue === 'true';
+          } else if (valueKey === 'files' || valueKey === 'agentsRun' || valueKey === 'gatesFired') {
+            (parsed as unknown as Record<string, string[]>)[valueKey] = rawValue.split(',').filter(Boolean);
+          } else {
+            (parsed as unknown as Record<string, string>)[valueKey] = rawValue;
+          }
           continue;
         }
         parsed.unknown.push(arg);
@@ -152,7 +255,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
         parsed.command === 'reset' ||
         parsed.command === 'completion' ||
         parsed.command === 'add' ||
-        parsed.command === 'import') &&
+        parsed.command === 'import' ||
+        parsed.command === 'memory' ||
+        parsed.command === 'run' ||
+        parsed.command === 'gate') &&
       parsed.subcommand === null
     ) {
       parsed.subcommand = arg;
@@ -353,5 +459,33 @@ ${b('WORKFLOW COMMANDS (run inside Claude Code)')}
   /fix-blockers        Fix only listed blockers, then verify.
 
 Existing files are NEVER deleted and NEVER silently overwritten.
+
+${b('Memory layer (v0.10+):')}
+  agentcohort memory init [--commit-all|--gitignore-all] [--yes]
+      Initialize .agentcohort/memory/{shared,local} and runs/.
+  agentcohort memory write <collection> --json-body=<JSON> --source=<agent> \\
+                           --confidence=<0..1> --verified=<true|false> \\
+                           --task-summary="<txt>" [--run-id=<uuid>] [--files=<csv>]
+      Append a validated entry (Zod schema + secret guard).
+  agentcohort memory read <collection> [--filter=k=v...] [--limit=N] \\
+                          [--since=<dur>] [--run-id=<uuid>] [--with-verifications] [--json]
+      Read entries with filters and optional verification join.
+  agentcohort memory search <keyword> [--collection=<name>] [--regex] [--limit=N]
+      Substring/regex search across collections.
+  agentcohort memory mark-stale (--auto | --id=<uuid> | --filter=files=<path>) \\
+                                [--collection=<name>] [--unstale] [--dry-run]
+      Mark entries stale (or unstale) after refactors.
+
+${b('Run lifecycle:')}
+  agentcohort run start --pipeline=<name> [--tier=<n>] [--task-summary="<txt>"]
+      Generate a UUIDv4 + start record. Prints the UUID to stdout only.
+  agentcohort run end --run-id=<uuid> --outcome=<success|aborted|failed> \\
+                      [--agents-run=<csv>] [--gates-fired=<csv>]
+      Append the end record matching the run_id.
+
+${b('Gate recording:')}
+  agentcohort gate record --run-id=<uuid> --gate=<name> --outcome=<verb> \\
+                          --proposed-content="<txt>" --posing-agent=<name> [--reason="<txt>"]
+      Record gate approve/reject/escalate/auto-skip into audit.jsonl.
 `;
 }

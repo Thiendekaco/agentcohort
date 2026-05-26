@@ -12,6 +12,14 @@ explicit human approval gate are overkill.
 
 If you are *investigating* a bug, do **not** use this — use `/bug-audit`.
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=quick-fix --tier=2 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## Pre-flight
 
 `$ARGUMENTS` must contain:
@@ -51,3 +59,11 @@ security, concurrency, cache, …), route to `/bug-fix-approved` instead.
 
 Stage summary + failing→passing regression evidence + reviewer verdict
 + a one-line confirmation that no out-of-scope changes were made.
+
+## Pipeline end
+
+The **final-reviewer** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

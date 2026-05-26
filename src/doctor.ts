@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIG_FILENAME } from './config';
+import { readJsonl } from './memoryIo';
+import { scanForSecrets } from './memorySecretGuard';
 import {
   DEFAULT_MODELS,
   GATE_NAMES,
@@ -32,7 +34,7 @@ import type { Skill } from './skills';
  * as JSON.
  */
 
-export type Severity = 'ok' | 'warn' | 'error';
+export type Severity = 'ok' | 'warn' | 'error' | 'info';
 
 export interface CheckResult {
   /** Stable machine-readable id (e.g. "agents.missing"). */
@@ -93,12 +95,13 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   );
   sections.push(checkCommands(opts.cwd, opts.templatesDir));
   sections.push(checkClaudeMd(opts.cwd));
+  sections.push(checkMemory(opts.cwd));
 
   let worst: Severity = 'ok';
   for (const s of sections) {
     for (const c of s.checks) {
       if (c.severity === 'error') worst = 'error';
-      else if (c.severity === 'warn' && worst === 'ok') worst = 'warn';
+      else if (c.severity === 'warn' && worst !== 'error') worst = 'warn';
     }
   }
   const summary: DoctorSummary =
@@ -535,6 +538,90 @@ function loadModelsForRender(cwd: string): {
     /* fall through */
   }
   return { ...DEFAULT_MODELS };
+}
+
+// ---------- Section: Memory ----------
+
+function checkMemory(cwd: string): SectionReport {
+  const checks: CheckResult[] = [];
+  checks.push(checkMemoryDirPresent(cwd));
+  checks.push(checkMemoryGitPolicy(cwd));
+  checks.push(checkMemorySecrets(cwd));
+  checks.push(checkCollectionSizes(cwd));
+  checks.push(checkStaleRatio(cwd));
+  return { name: 'Memory', checks };
+}
+
+function checkMemoryDirPresent(cwd: string): CheckResult {
+  const present = existsSync(join(cwd, '.agentcohort', 'memory'));
+  return present
+    ? { id: 'memory.dir-present', severity: 'ok',   message: '.agentcohort/memory/ exists' }
+    : { id: 'memory.dir-present', severity: 'info', message: 'memory layer not initialized — run `agentcohort memory init` to enable' };
+}
+
+function checkMemoryGitPolicy(cwd: string): CheckResult {
+  const giPath = join(cwd, '.gitignore');
+  if (!existsSync(giPath)) {
+    return { id: 'memory.git-policy', severity: 'info', message: 'no .gitignore — memory git policy not enforced' };
+  }
+  const gi = readFileSync(giPath, 'utf8');
+  const localGitignored = gi.includes('.agentcohort/memory/local/') || gi.includes('.agentcohort/');
+  const runsGitignored = gi.includes('.agentcohort/runs/') || gi.includes('.agentcohort/');
+  if (localGitignored && runsGitignored) {
+    return { id: 'memory.git-policy', severity: 'ok', message: 'shared committed; local + runs gitignored' };
+  }
+  return { id: 'memory.git-policy', severity: 'warn', message: 'memory git policy looks off — local and runs should be gitignored' };
+}
+
+const SCAN_LAST_N = 100;
+function checkMemorySecrets(cwd: string): CheckResult {
+  const sharedDir = join(cwd, '.agentcohort', 'memory', 'shared');
+  if (!existsSync(sharedDir)) {
+    return { id: 'memory.secrets-scan', severity: 'ok', message: 'no shared entries to scan' };
+  }
+  const files = readdirSync(sharedDir).filter((f) => f.endsWith('.jsonl'));
+  const matches: string[] = [];
+  for (const f of files) {
+    const entries = readJsonl<any>(join(sharedDir, f)).slice(-SCAN_LAST_N);
+    for (const e of entries) {
+      const hit = scanForSecrets(JSON.stringify(e));
+      if (hit.length > 0) matches.push(`${f}/${e.id}`);
+    }
+  }
+  return matches.length === 0
+    ? { id: 'memory.secrets-scan', severity: 'ok', message: `no secrets in last ${SCAN_LAST_N} entries per file` }
+    : { id: 'memory.secrets-scan', severity: 'error', message: `secrets detected: ${matches.join(', ')}` };
+}
+
+const COLLECTION_SIZE_WARN_THRESHOLD = 500;
+function checkCollectionSizes(cwd: string): CheckResult {
+  const sharedDir = join(cwd, '.agentcohort', 'memory', 'shared');
+  if (!existsSync(sharedDir)) return { id: 'memory.collection-sizes', severity: 'ok', message: 'no collections yet' };
+  const oversized: string[] = [];
+  for (const f of readdirSync(sharedDir).filter((x) => x.endsWith('.jsonl'))) {
+    const count = readJsonl<any>(join(sharedDir, f)).length;
+    if (count > COLLECTION_SIZE_WARN_THRESHOLD) oversized.push(`${f} (${count} entries)`);
+  }
+  return oversized.length === 0
+    ? { id: 'memory.collection-sizes', severity: 'ok', message: 'all collections under 500 entries' }
+    : { id: 'memory.collection-sizes', severity: 'warn', message: `oversized: ${oversized.join(', ')} — manual triage (compact lands in v0.10.1+)` };
+}
+
+const STALE_RATIO_WARN = 0.3;
+function checkStaleRatio(cwd: string): CheckResult {
+  const sharedDir = join(cwd, '.agentcohort', 'memory', 'shared');
+  if (!existsSync(sharedDir)) return { id: 'memory.stale-ratio', severity: 'ok', message: 'no collections yet' };
+  let total = 0, stale = 0;
+  for (const f of readdirSync(sharedDir).filter((x) => x.endsWith('.jsonl'))) {
+    const entries = readJsonl<any>(join(sharedDir, f));
+    total += entries.length;
+    stale += entries.filter((e: any) => e.stale).length;
+  }
+  if (total === 0) return { id: 'memory.stale-ratio', severity: 'ok', message: 'no entries' };
+  const ratio = stale / total;
+  return ratio < STALE_RATIO_WARN
+    ? { id: 'memory.stale-ratio', severity: 'ok', message: `stale ratio ${(ratio * 100).toFixed(1)}%` }
+    : { id: 'memory.stale-ratio', severity: 'warn', message: `stale ratio ${(ratio * 100).toFixed(1)}% — run \`memory mark-stale --auto --unstale\` after a refresh` };
 }
 
 // ---------- Section: CLAUDE.md ----------

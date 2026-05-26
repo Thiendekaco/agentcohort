@@ -83,7 +83,13 @@ import { unifiedDiff } from './textDiff';
 import { loadConfig, writeConfig, resolveModels, resolveGates } from './config';
 import { createLogger, paint } from './logger';
 import { getTemplatesDir, getVersion } from './paths';
-import { parseArgs, helpText } from './args';
+import { parseArgs, helpText, ParsedArgs } from './args';
+import {
+  runMemoryInit, runMemoryWrite, runMemoryRead, runMemorySearch, runMemoryMarkStale,
+  GitMode, MarkStaleMode,
+} from './memoryCmd';
+import { runRunStart, runRunEnd } from './runCmd';
+import { runGateRecord } from './gateCmd';
 
 function printSummary(result: InitResult): void {
   const counts = new Map<string, number>();
@@ -128,7 +134,13 @@ function printSummary(result: InitResult): void {
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
 
-  if (args.unknown.length > 0) {
+  // memory / run / gate commands accept positional args that land in unknown[].
+  const commandAllowsUnknown =
+    args.command === 'memory' ||
+    args.command === 'run' ||
+    args.command === 'gate';
+
+  if (!commandAllowsUnknown && args.unknown.length > 0) {
     process.stderr.write(
       paint(`✗ Unknown argument(s): ${args.unknown.join(', ')}\n`, 'red')
     );
@@ -164,7 +176,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'export' &&
     args.command !== 'import' &&
     args.command !== 'skills' &&
-    args.command !== 'refresh-skills'
+    args.command !== 'refresh-skills' &&
+    args.command !== 'memory' &&
+    args.command !== 'run' &&
+    args.command !== 'gate'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -492,6 +507,35 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       process.stderr.write(paint(`✗ refresh-skills: ${message}\n`, 'red'));
       return 2;
     }
+  }
+
+  if (args.command === 'memory') {
+    switch (args.subcommand) {
+      case 'init':       return handleMemoryInit(args);
+      case 'write':      return handleMemoryWrite(args);
+      case 'read':       return handleMemoryRead(args);
+      case 'search':     return handleMemorySearch(args);
+      case 'mark-stale': return handleMemoryMarkStale(args);
+      default:
+        process.stderr.write(paint(`✗ Unknown memory subcommand: ${args.subcommand}\n`, 'red'));
+        return 1;
+    }
+  }
+
+  if (args.command === 'run') {
+    switch (args.subcommand) {
+      case 'start': return handleRunStart(args);
+      case 'end':   return handleRunEnd(args);
+      default:
+        process.stderr.write(paint(`✗ Unknown run subcommand: ${args.subcommand}\n`, 'red'));
+        return 1;
+    }
+  }
+
+  if (args.command === 'gate') {
+    if (args.subcommand === 'record') return handleGateRecord(args);
+    process.stderr.write(paint(`✗ Unknown gate subcommand: ${args.subcommand}\n`, 'red'));
+    return 1;
   }
 
   if (args.command === 'skills') {
@@ -1187,11 +1231,228 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
+// ============================================================================
+// Memory / Run / Gate handlers (v0.10+)
+// ============================================================================
+
+function handleMemoryInit(args: ParsedArgs): number {
+  const mode: GitMode = args.commitAll ? 'commit-all'
+    : args.gitignoreAll ? 'gitignore-all'
+    : 'default';
+  try {
+    const r = runMemoryInit({ cwd: process.cwd(), mode });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    console.log(`Memory layer ${r.created.length > 0 ? 'initialized' : 'already initialized'}.`);
+    if (r.gitignoreUpdated) console.log('  .gitignore updated.');
+    for (const c of r.created) console.log(`  + ${c}`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory init: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryWrite(args: ParsedArgs): number {
+  // Collection can be a positional or --collection= flag.
+  const collection = args.collection ?? args.unknown[0] ?? null;
+  const effectiveArgs = { ...args, collection };
+  const missing = (['collection', 'bodyJson', 'source', 'confidence', 'taskSummary'] as (keyof ParsedArgs)[])
+    .filter((k) => effectiveArgs[k] === null || effectiveArgs[k] === undefined);
+  if (missing.length > 0) {
+    for (const k of missing) process.stderr.write(`error: --${camelToKebab(k as string)} is required\n`);
+    return 1;
+  }
+  try {
+    const r = runMemoryWrite({
+      cwd: process.cwd(),
+      collection: collection!,
+      bodyJson: args.bodyJson!,
+      source: args.source!,
+      confidence: args.confidence!,
+      verified: args.verifiedFlag ?? false,
+      taskSummary: args.taskSummary!,
+      runId: args.runId ?? undefined,
+      files: args.files ?? [],
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    if (r.disposition === 'written') {
+      console.log(`Wrote entry ${r.entryId} to ${r.filePath}`);
+      return 0;
+    }
+    process.stderr.write(`${r.disposition}: ${r.errorMessage ?? ''}\n`);
+    if (r.secretMatches) for (const m of r.secretMatches) {
+      process.stderr.write(`  - secret pattern '${m.patternName}' matched at offset ${m.offset} (preview: ${m.preview})\n`);
+    }
+    return 1;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory write: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryRead(args: ParsedArgs): number {
+  const collection = args.collection ?? args.unknown[0] ?? null;
+  if (!collection) {
+    process.stderr.write('error: <collection> is required (or pass --collection=<name>)\n');
+    return 1;
+  }
+  try {
+    const r = runMemoryRead({
+      cwd: process.cwd(),
+      collection: collection,
+      filters: Object.keys(args.filters).length > 0 ? args.filters : undefined,
+      limit: args.limit ?? undefined,
+      since: args.since ?? undefined,
+      runId: args.runId ?? undefined,
+      withVerifications: args.withVerifications,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r.entries) + '\n'); return 0; }
+    for (const e of r.entries) process.stdout.write(JSON.stringify(e) + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory read: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemorySearch(args: ParsedArgs): number {
+  const query = args.unknown[0];
+  if (!query) {
+    process.stderr.write('error: search query is required\n');
+    return 1;
+  }
+  try {
+    const r = runMemorySearch({
+      cwd: process.cwd(),
+      query,
+      collection: args.collection ?? undefined,
+      regex: args.regex,
+      limit: args.limit ?? undefined,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    for (const m of r.matches) {
+      console.log(`${m.collection}  ${m.matchedField}  ${JSON.stringify(m.entry).slice(0, 120)}`);
+    }
+    return r.matches.length === 0 ? 1 : 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory search: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryMarkStale(args: ParsedArgs): number {
+  let mode: MarkStaleMode;
+  if (args.autoStale) {
+    mode = { kind: 'auto' };
+  } else if (args.staleId) {
+    mode = { kind: 'id', id: args.staleId };
+  } else if (args.filters.files) {
+    mode = { kind: 'filter', files: args.filters.files };
+  } else {
+    process.stderr.write('error: must specify --auto, --id=<uuid>, or --filter=files=<path>\n');
+    return 1;
+  }
+  try {
+    const r = runMemoryMarkStale({
+      cwd: process.cwd(),
+      mode,
+      collection: (args.collection ?? undefined) as Parameters<typeof runMemoryMarkStale>[0]['collection'],
+      unstale: args.unstale,
+      dryRun: args.dryRun,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    console.log(`Marked ${r.markedCount} entries ${args.unstale ? 'unstale' : 'stale'}.`);
+    for (const [col, n] of Object.entries(r.perCollection)) {
+      if (n > 0) console.log(`  ${col}: ${n}`);
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory mark-stale: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleRunStart(args: ParsedArgs): number {
+  if (!args.pipeline) {
+    process.stderr.write('error: --pipeline is required\n');
+    return 1;
+  }
+  try {
+    const r = runRunStart({
+      cwd: process.cwd(),
+      pipeline: args.pipeline!,
+      tier: args.tier ?? undefined,
+      taskSummary: args.taskSummary ?? undefined,
+    });
+    // CRITICAL: stdout = ONLY the UUID (no newline, no decoration).
+    process.stdout.write(r.runId);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ run start: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleRunEnd(args: ParsedArgs): number {
+  const missing = (['runId', 'outcome'] as (keyof ParsedArgs)[])
+    .filter((k) => args[k] === null || args[k] === undefined);
+  if (missing.length > 0) {
+    for (const k of missing) process.stderr.write(`error: --${camelToKebab(k as string)} is required\n`);
+    return 1;
+  }
+  try {
+    runRunEnd({
+      cwd: process.cwd(),
+      runId: args.runId!,
+      outcome: args.outcome as 'success' | 'aborted' | 'failed',
+      agentsRun: args.agentsRun ?? undefined,
+      gatesFired: args.gatesFired ?? undefined,
+    });
+    if (!args.json) console.log('OK');
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ run end: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleGateRecord(args: ParsedArgs): number {
+  const missing = (['runId', 'gate', 'outcome', 'proposedContent', 'posingAgent'] as (keyof ParsedArgs)[])
+    .filter((k) => args[k] === null || args[k] === undefined);
+  if (missing.length > 0) {
+    for (const k of missing) process.stderr.write(`error: --${camelToKebab(k as string)} is required\n`);
+    return 1;
+  }
+  try {
+    const r = runGateRecord({
+      cwd: process.cwd(),
+      runId: args.runId!,
+      gate: args.gate as 'architect' | 'plan' | 'bottleneck' | 'root-cause' | 'expert-council',
+      outcome: args.outcome as 'approved' | 'rejected' | 'escalated' | 'auto-skipped',
+      proposedContent: args.proposedContent!,
+      posingAgent: args.posingAgent!,
+      reason: args.reason ?? undefined,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    if (r.disposition === 'written') { console.log('Gate recorded.'); return 0; }
+    process.stderr.write(`${r.disposition}: ${r.errorMessage ?? ''}\n`);
+    return 1;
+  } catch (err) {
+    process.stderr.write(paint(`✗ gate record: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function camelToKebab(s: string): string {
+  return s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
+}
+
 function formatDoctorReport(report: DoctorReport): string {
   const SEVERITY_GLYPH: Record<Severity, string> = {
     ok: paint('✓', 'green'),
     warn: paint('⚠', 'yellow'),
     error: paint('✗', 'red'),
+    info: paint('ℹ', 'cyan'),
   };
   const out: string[] = [];
   out.push(paint('\nAgentcohort Doctor', 'bold', 'cyan'));
