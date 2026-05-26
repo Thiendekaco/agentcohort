@@ -73,24 +73,24 @@ export interface StatusOptions {
 /** Static — soft pointers at known-planned features, NOT release commitments. */
 const PLANNED_FEATURES: PlannedFeature[] = [
   {
-    name: 'Project profiles',
-    target: 'v0.7',
-    blurb: '`init --profile=backend|fullstack|...` for stack-aware presets',
+    name: 'Memory extensions',
+    target: 'v0.10.1',
+    blurb: '`hotspots` / `conventions` / `module-map` collections + dispatcher routing on past runs',
   },
   {
-    name: 'Skills auto-detect',
-    target: 'v0.7',
-    blurb: 'record installed Claude skills into config so agents reference them',
+    name: 'Stats dashboard',
+    target: 'v0.10.1',
+    blurb: '`agentcohort stats` cost report from INDEX.jsonl + per-stage telemetry',
   },
   {
-    name: 'Agent packs',
-    target: 'v0.8',
-    blurb: 'modular `agentcohort add-pack <name>` for custom agent bundles',
+    name: 'Memory lifecycle',
+    target: 'v0.10.2',
+    blurb: '`memory compact` (summarize old entries) + `memory clean --runs --older-than=30d`',
   },
   {
-    name: 'Telemetry',
-    target: 'v1.2',
-    blurb: 'per-task JSONL log of tier, tokens, gates, duration',
+    name: 'OpenWolf overlay',
+    target: 'v0.10.1',
+    blurb: 'defer `module-map` / `conventions` to OpenWolf when `.wolf/` is present',
   },
 ];
 
