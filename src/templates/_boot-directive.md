@@ -16,6 +16,10 @@
 3. Check available skills. If any skill matches what you're about to do,
    invoke it first — don't re-implement what a skill provides.
 <!-- agentcohort-skills-end -->
+
+<!-- agentcohort-memory-start -->
+<!-- placeholder — sync-boot-directive.mjs rewrites this region at build time -->
+<!-- agentcohort-memory-end -->
 4. Your role below is the default playbook. User CLAUDE.md, skills,
    and OpenWolf-recorded rules override this playbook on conflict.
 5. **Git safety — absolute boundary, no exceptions.** You must NEVER

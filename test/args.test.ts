@@ -388,3 +388,249 @@ describe('parseArgs - PR 2 additions', () => {
     expect(a.force).toBe(true);
   });
 });
+
+describe('parseArgs — memory/run/gate boolean flags (v0.10+)', () => {
+  it('parses --with-verifications as true', () => {
+    const a = parseArgs(['memory', 'read', '--with-verifications']);
+    expect(a.withVerifications).toBe(true);
+  });
+
+  it('parses --commit-all as true', () => {
+    const a = parseArgs(['memory', 'init', '--commit-all']);
+    expect(a.commitAll).toBe(true);
+  });
+
+  it('parses --gitignore-all as true', () => {
+    const a = parseArgs(['memory', 'init', '--gitignore-all']);
+    expect(a.gitignoreAll).toBe(true);
+  });
+
+  it('parses --auto as autoStale=true', () => {
+    const a = parseArgs(['memory', 'mark-stale', '--auto']);
+    expect(a.autoStale).toBe(true);
+  });
+
+  it('parses --unstale as true', () => {
+    const a = parseArgs(['memory', 'mark-stale', '--unstale']);
+    expect(a.unstale).toBe(true);
+  });
+
+  it('all new boolean flags default to false', () => {
+    const a = parseArgs(['memory', 'init']);
+    expect(a.withVerifications).toBe(false);
+    expect(a.commitAll).toBe(false);
+    expect(a.gitignoreAll).toBe(false);
+    expect(a.autoStale).toBe(false);
+    expect(a.unstale).toBe(false);
+  });
+});
+
+describe('parseArgs — memory/run/gate value flags (v0.10+)', () => {
+  it('parses --run-id=<uuid> as string', () => {
+    const a = parseArgs(['memory', 'write', '--run-id=abc-123']);
+    expect(a.runId).toBe('abc-123');
+  });
+
+  it('parses --collection=<name> as string', () => {
+    const a = parseArgs(['memory', 'read', '--collection=decisions']);
+    expect(a.collection).toBe('decisions');
+  });
+
+  it('parses --json-body=<json> into bodyJson', () => {
+    const a = parseArgs(['memory', 'write', '--json-body={"x":1}']);
+    expect(a.bodyJson).toBe('{"x":1}');
+  });
+
+  it('parses --source=<name> as string', () => {
+    const a = parseArgs(['memory', 'write', '--source=human']);
+    expect(a.source).toBe('human');
+  });
+
+  it('parses --confidence=0.9 as number', () => {
+    const a = parseArgs(['memory', 'write', '--confidence=0.9']);
+    expect(a.confidence).toBeCloseTo(0.9);
+  });
+
+  it('parses --verified=true as boolean true', () => {
+    const a = parseArgs(['memory', 'write', '--verified=true']);
+    expect(a.verifiedFlag).toBe(true);
+  });
+
+  it('parses --verified=false as boolean false', () => {
+    const a = parseArgs(['memory', 'write', '--verified=false']);
+    expect(a.verifiedFlag).toBe(false);
+  });
+
+  it('parses --task-summary=<txt> as string', () => {
+    const a = parseArgs(['memory', 'write', '--task-summary=my task']);
+    expect(a.taskSummary).toBe('my task');
+  });
+
+  it('parses --files=a,b,c as array', () => {
+    const a = parseArgs(['memory', 'write', '--files=a,b,c']);
+    expect(a.files).toEqual(['a', 'b', 'c']);
+  });
+
+  it('parses --limit=10 as number', () => {
+    const a = parseArgs(['memory', 'read', '--limit=10']);
+    expect(a.limit).toBe(10);
+  });
+
+  it('parses --since=<dur> as string', () => {
+    const a = parseArgs(['memory', 'read', '--since=7d']);
+    expect(a.since).toBe('7d');
+  });
+
+  it('parses --id=<uuid> into staleId', () => {
+    const a = parseArgs(['memory', 'mark-stale', '--id=abc-123']);
+    expect(a.staleId).toBe('abc-123');
+  });
+
+  it('parses --pipeline=<name> as string', () => {
+    const a = parseArgs(['run', 'start', '--pipeline=quick-fix']);
+    expect(a.pipeline).toBe('quick-fix');
+  });
+
+  it('parses --tier=2 as number', () => {
+    const a = parseArgs(['run', 'start', '--tier=2']);
+    expect(a.tier).toBe(2);
+  });
+
+  it('parses --outcome=<str> as string', () => {
+    const a = parseArgs(['run', 'end', '--outcome=success']);
+    expect(a.outcome).toBe('success');
+  });
+
+  it('parses --agents-run=a,b as array', () => {
+    const a = parseArgs(['run', 'end', '--agents-run=scout,architect']);
+    expect(a.agentsRun).toEqual(['scout', 'architect']);
+  });
+
+  it('parses --gates-fired=plan,arch as array', () => {
+    const a = parseArgs(['run', 'end', '--gates-fired=plan,architect']);
+    expect(a.gatesFired).toEqual(['plan', 'architect']);
+  });
+
+  it('parses --gate=<name> as string', () => {
+    const a = parseArgs(['gate', 'record', '--gate=plan']);
+    expect(a.gate).toBe('plan');
+  });
+
+  it('parses --reason=<txt> as string', () => {
+    const a = parseArgs(['gate', 'record', '--reason=looks good']);
+    expect(a.reason).toBe('looks good');
+  });
+
+  it('parses --proposed-content=<txt> into proposedContent', () => {
+    const a = parseArgs(['gate', 'record', '--proposed-content=some content']);
+    expect(a.proposedContent).toBe('some content');
+  });
+
+  it('parses --posing-agent=<name> into posingAgent', () => {
+    const a = parseArgs(['gate', 'record', '--posing-agent=planner']);
+    expect(a.posingAgent).toBe('planner');
+  });
+
+  it('all new value flags default to null', () => {
+    const a = parseArgs(['memory', 'init']);
+    expect(a.runId).toBeNull();
+    expect(a.collection).toBeNull();
+    expect(a.bodyJson).toBeNull();
+    expect(a.source).toBeNull();
+    expect(a.confidence).toBeNull();
+    expect(a.verifiedFlag).toBeNull();
+    expect(a.taskSummary).toBeNull();
+    expect(a.files).toBeNull();
+    expect(a.limit).toBeNull();
+    expect(a.since).toBeNull();
+    expect(a.staleId).toBeNull();
+    expect(a.pipeline).toBeNull();
+    expect(a.tier).toBeNull();
+    expect(a.outcome).toBeNull();
+    expect(a.agentsRun).toBeNull();
+    expect(a.gatesFired).toBeNull();
+    expect(a.gate).toBeNull();
+    expect(a.reason).toBeNull();
+    expect(a.proposedContent).toBeNull();
+    expect(a.posingAgent).toBeNull();
+  });
+});
+
+describe('parseArgs — --filter= repeatable flag (v0.10+)', () => {
+  it('parses a single --filter=k=v into filters record', () => {
+    const a = parseArgs(['memory', 'read', '--filter=source=human']);
+    expect(a.filters).toEqual({ source: 'human' });
+  });
+
+  it('accumulates multiple --filter flags', () => {
+    const a = parseArgs(['memory', 'read', '--filter=source=human', '--filter=verified=true']);
+    expect(a.filters).toEqual({ source: 'human', verified: 'true' });
+  });
+
+  it('last-write-wins on duplicate --filter key', () => {
+    const a = parseArgs(['memory', 'read', '--filter=source=human', '--filter=source=agent']);
+    expect(a.filters['source']).toBe('agent');
+  });
+
+  it('handles value containing = correctly (only splits on first =)', () => {
+    const a = parseArgs(['memory', 'read', '--filter=meta=a=b']);
+    expect(a.filters['meta']).toBe('a=b');
+  });
+
+  it('filters default to empty object', () => {
+    const a = parseArgs(['memory', 'read']);
+    expect(a.filters).toEqual({});
+  });
+});
+
+describe('parseArgs — memory/run/gate subcommand routing', () => {
+  it('parses `memory init` with subcommand=init', () => {
+    const a = parseArgs(['memory', 'init']);
+    expect(a.command).toBe('memory');
+    expect(a.subcommand).toBe('init');
+  });
+
+  it('parses `memory write` with subcommand=write', () => {
+    const a = parseArgs(['memory', 'write', 'decisions']);
+    expect(a.command).toBe('memory');
+    expect(a.subcommand).toBe('write');
+    expect(a.unknown).toEqual(['decisions']);
+  });
+
+  it('parses `memory mark-stale` with subcommand=mark-stale', () => {
+    const a = parseArgs(['memory', 'mark-stale', '--auto']);
+    expect(a.subcommand).toBe('mark-stale');
+    expect(a.autoStale).toBe(true);
+  });
+
+  it('parses `run start` with subcommand=start', () => {
+    const a = parseArgs(['run', 'start', '--pipeline=quick-fix']);
+    expect(a.command).toBe('run');
+    expect(a.subcommand).toBe('start');
+    expect(a.pipeline).toBe('quick-fix');
+  });
+
+  it('parses `run end` with subcommand=end', () => {
+    const a = parseArgs(['run', 'end', '--run-id=x', '--outcome=success']);
+    expect(a.command).toBe('run');
+    expect(a.subcommand).toBe('end');
+    expect(a.runId).toBe('x');
+    expect(a.outcome).toBe('success');
+  });
+
+  it('parses `gate record` with subcommand=record', () => {
+    const a = parseArgs(['gate', 'record', '--gate=plan', '--outcome=approved']);
+    expect(a.command).toBe('gate');
+    expect(a.subcommand).toBe('record');
+    expect(a.gate).toBe('plan');
+  });
+
+  it('mix of new flags with existing flags composes correctly', () => {
+    const a = parseArgs(['memory', 'read', '--collection=bugs', '--limit=5', '--json']);
+    expect(a.command).toBe('memory');
+    expect(a.subcommand).toBe('read');
+    expect(a.collection).toBe('bugs');
+    expect(a.limit).toBe(5);
+    expect(a.json).toBe(true);
+  });
+});

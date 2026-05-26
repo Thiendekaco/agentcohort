@@ -608,6 +608,141 @@ When no skills are detected, the boot directive keeps a generic
 fallback: "Check available skills. If any skill matches what you're
 about to do, invoke it first."
 
+### Memory layer — `agentcohort memory` (v0.10+)
+
+agentcohort agents are stateless by default — scout's findings aren't
+handed to architect, decisions aren't remembered across runs. The memory
+layer (v0.10.0) gives every agent four shared collections + a per-run
+scratchpad + a per-run telemetry index, with safety metadata on every
+entry.
+
+**File layout** (created by `agentcohort memory init`):
+
+```
+.agentcohort/
+  memory/
+    shared/                  # COMMITTED to git
+      decisions.jsonl        # architect verdicts (approved only)
+      bugs.jsonl             # verified bug fix patterns
+      audit.jsonl            # every gate fire (approve/reject/escalate)
+      verifications.jsonl    # append-only verification claims
+    local/                   # gitignored (reserved for v0.10.1+)
+  runs/                      # gitignored
+    <run-id>/
+      scratch.jsonl          # within-pipeline scratchpad
+    INDEX.jsonl              # one start + one end event per pipeline run
+```
+
+**Initialize once per project:**
+
+```bash
+agentcohort memory init              # default: shared committed, local + runs gitignored
+agentcohort memory init --commit-all # everything committed (max-share teams)
+agentcohort memory init --gitignore-all # everything gitignored (max-privacy)
+```
+
+**Every memory entry has 5 safety fields** (validated by Zod):
+
+| Field | Purpose |
+|---|---|
+| `confidence` | 0..1, set by the writer |
+| `source` | which agent (or `human`) wrote it |
+| `verified` | initial claim; downstream `verifications.jsonl` can refute |
+| `stale` | flipped by `memory mark-stale` when files change |
+| `context.commit` | git SHA at write time (for staleness detection) |
+
+**Pre-write secret guard**: every write is scanned for 7 regex patterns
+(AWS keys, OpenAI / GitHub / Anthropic tokens, Bearer tokens, PEM private
+keys, `.env`-style lines). See
+[`docs/memory/secret-patterns.md`](docs/memory/secret-patterns.md).
+
+**CLI commands** (8 total):
+
+```bash
+agentcohort memory init       [--commit-all|--gitignore-all]
+agentcohort memory write <collection> --json-body=<JSON> --source=<agent> \
+                                     --confidence=<0..1> --verified=<true|false> \
+                                     --task-summary="<txt>" [--run-id=<uuid>] [--files=<csv>]
+agentcohort memory read <collection>  [--filter=k=v...] [--limit=N] [--since=<dur>] \
+                                      [--run-id=<uuid>] [--with-verifications] [--json]
+agentcohort memory search <keyword>   [--collection=<name>] [--regex] [--limit=N]
+agentcohort memory mark-stale  (--auto | --id=<uuid> | --filter=files=<path>) \
+                               [--collection=<name>] [--unstale] [--dry-run]
+
+agentcohort run start --pipeline=<name> [--tier=<n>] [--task-summary=<txt>]
+agentcohort run end   --run-id=<uuid> --outcome=<success|aborted|failed> \
+                      [--agents-run=<csv>] [--gates-fired=<csv>]
+agentcohort gate record --run-id=<uuid> --gate=<name> --outcome=<verb> \
+                        --proposed-content=<txt> --posing-agent=<name> [--reason=<txt>]
+```
+
+**Run-id flow.** The slash-command templates (`/dev-flow`, `/bug-audit`,
+etc.) instruct the dispatcher (or first agent) to call
+`agentcohort run start --pipeline=<chosen>` and pass the printed UUID as
+`Run ID: <uuid>` in every subsequent subagent prompt. Each agent uses that
+UUID to scope its `memory read scratch` and tag its `memory write`
+entries. The designated last agent of the pipeline calls
+`agentcohort run end --outcome=success`.
+
+**Verification chain** (append-only refute pattern):
+
+```bash
+# bug-fixer writes a bug entry (verified=false initially)
+agentcohort memory write bugs --json-body='{...}' --source=bug-fixer --verified=false ...
+
+# Later, test-verifier confirms it
+agentcohort memory write verifications \
+  --json-body='{"target_id":"<bug-id>","target_collection":"bugs","verified":true,"evidence":"tests passed","by_stage":"test-verifier"}' \
+  --source=test-verifier --verified=true ...
+
+# Read bugs WITH the latest verification joined
+agentcohort memory read bugs --with-verifications
+# → each entry gains _effective_verified, _verification_evidence, _verification_by_stage
+```
+
+**Memory affinity map.** Each bundled agent only reads/writes the
+collections relevant to its role (so boot directive stays small).
+Customize per-project in `.agentcohort.json`:
+
+```json
+{
+  "version": 1,
+  "memoryAffinity": {
+    "my-custom-agent": { "reads": ["bugs"], "writes": ["scratch"] }
+  }
+}
+```
+
+User entries replace defaults for that agent (no union — explicit).
+
+**Doctor checks** (5 new in v0.10):
+
+| Check | What it verifies |
+|---|---|
+| `memory.dir-present` | `.agentcohort/memory/` exists |
+| `memory.git-policy` | shared committed, local + runs gitignored |
+| `memory.secrets-scan` | last 100 entries per file are secret-free |
+| `memory.collection-sizes` | warn > 500 entries |
+| `memory.stale-ratio` | warn > 30% stale |
+
+**Status output** (`agentcohort status` gains a `Memory:` block):
+
+```
+Memory:
+  Initialized:     yes
+  Collections:     decisions: 47, bugs: 23, audit: 156, verifications: 41
+  Runs tracked:    78
+  Last write:      2026-05-25T14:22:00Z by solution-architect → decisions
+  Stale entries:   3
+  Git policy:      shared committed, local + runs gitignored
+```
+
+**What v0.10.1 will add:** `hotspots` / `conventions` / `module-map`
+collections, `agentcohort stats` cost dashboard, dispatcher integration
+(reads INDEX.jsonl + decisions.jsonl to recommend similar past pipelines),
+OpenWolf overlay (skip `module-map` when `.wolf/anatomy.md` exists), and
+read-time stale auto-detection.
+
 ### Share customizations across projects — `agentcohort export` / `import`
 
 Bundle every local file (`add` / `add --override` output) plus

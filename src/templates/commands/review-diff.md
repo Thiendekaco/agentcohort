@@ -7,6 +7,14 @@ argument-hint: [base ref or PR — defaults to the current branch diff]
 
 Run the **final-reviewer** subagent on the current change.
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=review-diff --tier=1 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## What to review
 
 - If `$ARGUMENTS` names a base ref or PR, diff against that.
@@ -37,3 +45,11 @@ The reviewer must judge, with `path:line` evidence and explicit severity
 
 `APPROVE` or `BLOCK`, the findings list, and exactly what must change before
 it can land. If BLOCK, recommend `/fix-blockers` with the blocker list.
+
+## Pipeline end
+
+The **final-reviewer** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

@@ -23,6 +23,40 @@ model: sonnet
 3. Check available skills. If any skill matches what you're about to do,
    invoke it first — don't re-implement what a skill provides.
 <!-- agentcohort-skills-end -->
+
+<!-- agentcohort-memory-start -->
+4. Memory layer (agentcohort v0.10+).
+   This agent's memory affinity:
+   - Reads: scratch
+   - Writes: scratch
+
+   Your prompt contains a line like `Run ID: <uuid>` from the dispatcher.
+   Substitute that uuid for `<RUN_ID>` below (it is NOT a shell env var —
+   subagents have no shell; compose the bash command with the literal uuid).
+
+   At the START of your work:
+   - Load the scratchpad: `agentcohort memory read scratch --run-id=<RUN_ID>`
+   - For each collection in your "reads" list:
+     `agentcohort memory read <collection> --filter=<...> --limit=10`
+
+   At the END of your work, if you produced a memorable verdict:
+   - Architecture choice → `agentcohort memory write decisions --json-body='{...}' --source=performance-hunter ...`
+   - Verified bug fix → `agentcohort memory write bugs --json-body='{...}' --source=performance-hunter ...`
+   - In-pipeline notes → `agentcohort memory write scratch ... --run-id=<RUN_ID>`
+
+   When a gate fires (you posed approval/rejection to the user):
+   - `agentcohort gate record --run-id=<RUN_ID> --gate=<name> --outcome=<verb> \\\
+     --proposed-content="<short summary>" --posing-agent=performance-hunter [--reason="<user text>"]`
+   - REQUIRED on every gate fire — approve, reject, escalate, auto-skip.
+
+   When you VERIFY (or REFUTE) an earlier memory entry:
+   - `agentcohort memory write verifications --json-body='{...}' --source=performance-hunter ...`
+   - Verifications are append-only — to refute, append a new entry with verified=false.
+
+   **NEVER store secrets** — API keys, tokens, .env content, private keys,
+   stacktraces with creds. The CLI rejects what it detects, but YOU are the
+   first line of defense. If unsure, redact aggressively.
+<!-- agentcohort-memory-end -->
 4. Your role below is the default playbook. User CLAUDE.md, skills,
    and OpenWolf-recorded rules override this playbook on conflict.
 5. **Git safety — absolute boundary, no exceptions.** You must NEVER

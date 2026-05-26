@@ -8,6 +8,14 @@ argument-hint: <paste the blocker list from a review>
 Resolve **only** the specific blockers listed in `$ARGUMENTS` (typically the
 BLOCKER/HIGH findings from `/review-diff`, `/dev-flow`, or `/perf-hunt`).
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=fix-blockers --tier=1 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## Pre-flight
 
 Restate each blocker as a discrete, checkable item. If the list is vague or
@@ -34,3 +42,11 @@ empty, **stop and ask** for the explicit blockers — do not infer scope.
 
 Per-blocker: what changed (`path:line`), the verification command, and its
 real result. Then recommend re-running `/review-diff` to confirm clearance.
+
+## Pipeline end
+
+The **test-verifier** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

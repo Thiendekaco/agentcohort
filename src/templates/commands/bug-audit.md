@@ -8,6 +8,14 @@ argument-hint: <bug report, error, or area to audit>
 Orchestrate the bug audit for `$ARGUMENTS`. **This flow does not change any
 product code.** Its only deliverable is a decision-ready report.
 
+## Memory layer (agentcohort v0.10+)
+
+1. Before invoking the first subagent, run:
+
+   `RUN_ID=$(agentcohort run start --pipeline=bug-audit --tier=3 --task-summary="<one-line summary of $ARGUMENTS>")`
+
+2. Include `Run ID: $RUN_ID` in EVERY subagent invocation prompt below. Subagents use this UUID to read/write the run scratchpad and tag every memory write.
+
 ## Pipeline
 
 1. **bug-hunter** — sweep for confirmed and latent defects with evidence.
@@ -38,6 +46,15 @@ product code.** Its only deliverable is a decision-ready report.
    Fallback when `AskUserQuestion` is unavailable: numbered text menu
    accepting `1`/`y`/Enter / `revise <feedback>` / `abort`. If `off`,
    skip this gate.
+
+   ### Gate: root-cause
+
+   When the user responds (approve / revise / abort / escalate), record the outcome:
+
+   `agentcohort gate record --run-id=$RUN_ID --gate=root-cause --outcome=<approved|rejected|escalated|auto-skipped> --proposed-content="<short summary of what was up for approval>" --posing-agent=root-cause-analyst [--reason="<user text — REQUIRED on reject/escalate>"]`
+
+   If outcome is `rejected` or `aborted`, also call `agentcohort run end --run-id=$RUN_ID --outcome=aborted` and STOP the pipeline.
+
 4. **reproduction-engineer** — make the primary bug deterministic; capture a
    failing test/script (test scaffolding only — no product-code changes).
 5. **expert-council** — review the diagnosis; produce solution options with
@@ -58,6 +75,14 @@ product code.** Its only deliverable is a decision-ready report.
 
    No code changes occur in `/bug-audit` regardless of any gate config —
    only `/bug-fix-approved` invoked separately by the user can change code.
+
+   ### Gate: expert-council
+
+   When the user responds (approve / revise / abort / escalate), record the outcome:
+
+   `agentcohort gate record --run-id=$RUN_ID --gate=expert-council --outcome=<approved|rejected|escalated|auto-skipped> --proposed-content="<short summary of what was up for approval>" --posing-agent=expert-council [--reason="<user text — REQUIRED on reject/escalate>"]`
+
+   If outcome is `rejected` or `aborted`, also call `agentcohort run end --run-id=$RUN_ID --outcome=aborted` and STOP the pipeline.
 
 ## Iron rules
 
@@ -90,3 +115,11 @@ product code.** Its only deliverable is a decision-ready report.
 
 > **Awaiting human approval.** To proceed, run `/bug-fix-approved` with the
 > option you approve. No code will change until then.
+
+## Pipeline end
+
+The **expert-council** (designated last agent for this pipeline) must call:
+
+`agentcohort run end --run-id=$RUN_ID --outcome=success --agents-run=<csv of agents that actually ran> [--gates-fired=<csv of gates that fired>]`
+
+If the pipeline aborted at a gate, the gate-record step already called `run end --outcome=aborted` — do NOT call it again.

@@ -22,6 +22,7 @@ import {
 } from './stamp';
 import { hasLocalMarker } from './localMarker';
 import { injectSkillsList } from './skillsBoot';
+import { injectMemorySection } from './memoryBoot';
 import {
   resolveAffinity,
   relevantSkills,
@@ -117,6 +118,11 @@ export interface UpgradeOptions {
   skills?: readonly Skill[];
   /** Per-skill affinity overrides (merged with DEFAULT_AFFINITY). */
   affinity?: SkillAffinity;
+  /**
+   * Memory affinity overrides for per-agent memory curation. When
+   * omitted the built-in DEFAULT_MEMORY_AFFINITY is used.
+   */
+  memoryAffinity?: Record<string, import('./memoryAffinity').MemoryAffinityEntry>;
   resolver?: UpgradeResolver;
   now?: () => Date;
   logger?: Logger;
@@ -219,7 +225,10 @@ export async function runUpgrade(options: UpgradeOptions): Promise<UpgradeResult
     const withSkills = isAgent
       ? injectSkillsList(rendered, relevant)
       : rendered;
-    const bundled = stampTemplate(withSkills);
+    const withMemory = isAgent
+      ? injectMemorySection(withSkills, agentName, options.memoryAffinity)
+      : withSkills;
+    const bundled = stampTemplate(withMemory);
     const installed = readIfExists(entry.targetAbsPath);
 
     if (installed === null) {

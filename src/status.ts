@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { CONFIG_FILENAME } from './config';
 import { DEFAULT_MODELS, DEFAULT_GATES, GateName, GateMode } from './defaults';
 import { getVersion } from './paths';
+import { readJsonl } from './memoryIo';
 
 /**
  * `agentcohort status` — fast read-only at-a-glance report of the
@@ -32,6 +33,15 @@ export interface ResolvedModels {
 
 export type ResolvedGates = Record<GateName, GateMode>;
 
+export interface MemoryStatus {
+  initialized: boolean;
+  collections: Record<string, number>;
+  runsTracked: number;
+  lastWrite: { ts: string; source: string; collection: string } | null;
+  staleEntries: number;
+  gitPolicy: 'shared-committed-local-gitignored' | 'all-gitignored' | 'all-committed' | 'unknown';
+}
+
 export interface PlannedFeature {
   /** Short label. */
   name: string;
@@ -52,6 +62,7 @@ export interface StatusReport {
   /** Whether gates came from `.agentcohort.json` (custom) or defaults. */
   gatesSource: 'config' | 'defaults';
   planned: PlannedFeature[];
+  memory: MemoryStatus;
 }
 
 export interface StatusOptions {
@@ -62,24 +73,24 @@ export interface StatusOptions {
 /** Static — soft pointers at known-planned features, NOT release commitments. */
 const PLANNED_FEATURES: PlannedFeature[] = [
   {
-    name: 'Project profiles',
-    target: 'v0.7',
-    blurb: '`init --profile=backend|fullstack|...` for stack-aware presets',
+    name: 'Memory extensions',
+    target: 'v0.10.1',
+    blurb: '`hotspots` / `conventions` / `module-map` collections + dispatcher routing on past runs',
   },
   {
-    name: 'Skills auto-detect',
-    target: 'v0.7',
-    blurb: 'record installed Claude skills into config so agents reference them',
+    name: 'Stats dashboard',
+    target: 'v0.10.1',
+    blurb: '`agentcohort stats` cost report from INDEX.jsonl + per-stage telemetry',
   },
   {
-    name: 'Agent packs',
-    target: 'v0.8',
-    blurb: 'modular `agentcohort add-pack <name>` for custom agent bundles',
+    name: 'Memory lifecycle',
+    target: 'v0.10.2',
+    blurb: '`memory compact` (summarize old entries) + `memory clean --runs --older-than=30d`',
   },
   {
-    name: 'Telemetry',
-    target: 'v1.2',
-    blurb: 'per-task JSONL log of tier, tokens, gates, duration',
+    name: 'OpenWolf overlay',
+    target: 'v0.10.1',
+    blurb: 'defer `module-map` / `conventions` to OpenWolf when `.wolf/` is present',
   },
 ];
 
@@ -88,6 +99,7 @@ const ROUTING_HEADING_RE = /^# Agentcohort Routing Rules[ \t]*$/m;
 export function runStatus(opts: StatusOptions): StatusReport {
   const install = readInstall(opts.cwd, opts.templatesDir);
   const { models, modelsSource, gates, gatesSource } = readConfig(opts.cwd);
+  const memory = readMemory(opts.cwd);
   return {
     cwd: opts.cwd,
     version: getVersion(),
@@ -97,6 +109,7 @@ export function runStatus(opts: StatusOptions): StatusReport {
     gates,
     gatesSource,
     planned: PLANNED_FEATURES,
+    memory,
   };
 }
 
@@ -139,6 +152,53 @@ function isDir(p: string): boolean {
   } catch {
     return false;
   }
+}
+
+function readMemory(cwd: string): MemoryStatus {
+  const memDir = join(cwd, '.agentcohort', 'memory');
+  if (!existsSync(memDir)) {
+    return {
+      initialized: false, collections: {}, runsTracked: 0,
+      lastWrite: null, staleEntries: 0, gitPolicy: detectGitPolicy(cwd),
+    };
+  }
+  const sharedDir = join(memDir, 'shared');
+  const collections: Record<string, number> = {};
+  let staleEntries = 0;
+  let lastWrite: MemoryStatus['lastWrite'] = null;
+  if (existsSync(sharedDir)) {
+    for (const f of readdirSync(sharedDir).filter((x) => x.endsWith('.jsonl'))) {
+      const entries = readJsonl<any>(join(sharedDir, f));
+      const name = f.replace(/\.jsonl$/, '');
+      collections[name] = entries.length;
+      staleEntries += entries.filter((e: any) => e.stale).length;
+      const last = entries[entries.length - 1];
+      if (last && (!lastWrite || new Date(last.ts) > new Date(lastWrite.ts))) {
+        lastWrite = { ts: last.ts, source: last.source, collection: name };
+      }
+    }
+  }
+  const indexPath = join(cwd, '.agentcohort', 'runs', 'INDEX.jsonl');
+  const runsTracked = existsSync(indexPath)
+    ? readJsonl<any>(indexPath).filter((e: any) => e.event === 'start').length
+    : 0;
+  return {
+    initialized: true, collections, runsTracked, lastWrite, staleEntries,
+    gitPolicy: detectGitPolicy(cwd),
+  };
+}
+
+function detectGitPolicy(cwd: string): MemoryStatus['gitPolicy'] {
+  const giPath = join(cwd, '.gitignore');
+  if (!existsSync(giPath)) return 'unknown';
+  const gi = readFileSync(giPath, 'utf8');
+  const hasBroad = gi.includes('.agentcohort/') && !gi.includes('.agentcohort/memory/local/');
+  const hasSplit = gi.includes('.agentcohort/memory/local/') && gi.includes('.agentcohort/runs/');
+  const hasNothing = !gi.includes('.agentcohort/');
+  if (hasBroad) return 'all-gitignored';
+  if (hasSplit) return 'shared-committed-local-gitignored';
+  if (hasNothing) return 'all-committed';
+  return 'unknown';
 }
 
 function readConfig(cwd: string): {
