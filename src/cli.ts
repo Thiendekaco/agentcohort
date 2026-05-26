@@ -86,10 +86,13 @@ import { getTemplatesDir, getVersion } from './paths';
 import { parseArgs, helpText, ParsedArgs } from './args';
 import {
   runMemoryInit, runMemoryWrite, runMemoryRead, runMemorySearch, runMemoryMarkStale,
+  runMemoryListRuns, runMemoryScanModules, runMemoryScanHotspots,
+  runMemoryCompact, runMemoryClean,
   GitMode, MarkStaleMode,
 } from './memoryCmd';
 import { runRunStart, runRunEnd } from './runCmd';
 import { runGateRecord } from './gateCmd';
+import { runStats } from './statsCmd';
 
 function printSummary(result: InitResult): void {
   const counts = new Map<string, number>();
@@ -179,7 +182,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     args.command !== 'refresh-skills' &&
     args.command !== 'memory' &&
     args.command !== 'run' &&
-    args.command !== 'gate'
+    args.command !== 'gate' &&
+    args.command !== 'stats'
   ) {
     process.stderr.write(paint(`✗ Unknown command: ${args.command}\n`, 'red'));
     process.stdout.write(helpText() + '\n');
@@ -511,11 +515,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (args.command === 'memory') {
     switch (args.subcommand) {
-      case 'init':       return handleMemoryInit(args);
-      case 'write':      return handleMemoryWrite(args);
-      case 'read':       return handleMemoryRead(args);
-      case 'search':     return handleMemorySearch(args);
-      case 'mark-stale': return handleMemoryMarkStale(args);
+      case 'init':          return handleMemoryInit(args);
+      case 'write':         return handleMemoryWrite(args);
+      case 'read':          return handleMemoryRead(args);
+      case 'search':        return handleMemorySearch(args);
+      case 'mark-stale':    return handleMemoryMarkStale(args);
+      case 'list-runs':     return handleMemoryListRuns(args);
+      case 'scan-modules':  return handleMemoryScanModules(args);
+      case 'scan-hotspots': return handleMemoryScanHotspots(args);
+      case 'compact':       return handleMemoryCompact(args);
+      case 'clean':         return handleMemoryClean(args);
       default:
         process.stderr.write(paint(`✗ Unknown memory subcommand: ${args.subcommand}\n`, 'red'));
         return 1;
@@ -536,6 +545,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     if (args.subcommand === 'record') return handleGateRecord(args);
     process.stderr.write(paint(`✗ Unknown gate subcommand: ${args.subcommand}\n`, 'red'));
     return 1;
+  }
+
+  if (args.command === 'stats') {
+    return handleStats(args);
   }
 
   if (args.command === 'skills') {
@@ -1439,6 +1452,135 @@ function handleGateRecord(args: ParsedArgs): number {
     return 1;
   } catch (err) {
     process.stderr.write(paint(`✗ gate record: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryListRuns(args: ParsedArgs): number {
+  try {
+    const r = runMemoryListRuns({
+      cwd: process.cwd(),
+      limit: args.limit ?? undefined,
+      since: args.since ?? undefined,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r.runs) + '\n'); return 0; }
+    if (r.runs.length === 0) { console.log('(no runs tracked)'); return 0; }
+    console.log(`run_id    ts_start                  pipeline      tier  duration  outcome  gates`);
+    for (const run of r.runs) {
+      const dur = run.duration_ms !== null ? `${Math.round(run.duration_ms / 1000)}s` : '-';
+      console.log(`${run.run_id.slice(0, 8)}  ${run.ts_start}  ${run.pipeline.padEnd(12)}  ${run.tier ?? '-'}     ${dur.padEnd(8)}  ${run.outcome.padEnd(7)}  ${(run.gates_fired ?? []).join(',') || '-'}`);
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory list-runs: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryScanModules(args: ParsedArgs): number {
+  try {
+    const r = runMemoryScanModules({
+      cwd: process.cwd(),
+      root: args.root ?? 'src',
+      dryRun: args.dryRun,
+      yes: args.yes,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    if (r.openWolfWarning) console.error('warning: OpenWolf .wolf/anatomy.md detected — module-map will be redundant');
+    console.log(`Detected ${r.modules.length} module candidates (${r.disposition}):`);
+    for (const m of r.modules) console.log(`  ${m.module} (${m.files.length} files)`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory scan-modules: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryScanHotspots(args: ParsedArgs): number {
+  try {
+    const r = runMemoryScanHotspots({
+      cwd: process.cwd(),
+      threshold: args.threshold ?? 2,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    console.log(`Wrote ${r.hotspotCount} hotspot entries:`);
+    for (const [file, count] of Object.entries(r.perFile)) console.log(`  ${file}: ${count} bugs`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory scan-hotspots: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryCompact(args: ParsedArgs): number {
+  try {
+    const r = runMemoryCompact({
+      cwd: process.cwd(),
+      collection: (args.collection ?? undefined) as any,
+      olderThan: args.olderThan ?? undefined,
+      keepLast: args.keepLast ?? undefined,
+      dryRun: args.dryRun,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    if (r.skippedAudit) { console.error('error: cannot compact audit/verifications/scratch'); return 1; }
+    console.log(`Compacted ${r.compactedCount} collection(s)${args.dryRun ? ' (dry-run)' : ''}:`);
+    for (const [col, n] of Object.entries(r.perCollection)) if (n > 0) console.log(`  ${col}: merged ${n} entries`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory compact: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleMemoryClean(args: ParsedArgs): number {
+  try {
+    const r = runMemoryClean({
+      cwd: process.cwd(),
+      olderThan: args.olderThan ?? '30d',
+      orphans: args.orphans,
+      dryRun: args.dryRun,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    console.log(`Removed ${r.removedCount} run directories${args.dryRun ? ' (dry-run)' : ''}.`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ memory clean: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
+    return 2;
+  }
+}
+
+function handleStats(args: ParsedArgs): number {
+  try {
+    const r = runStats({
+      cwd: process.cwd(),
+      since: args.since ?? '7d',
+      compareNaive: args.compareNaive,
+    });
+    if (args.json) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+    console.log(`agentcohort stats — last ${args.since ?? '7 days'}`);
+    console.log('');
+    console.log(`Runs: ${r.totalRuns} total`);
+    console.log(`  Success: ${r.perOutcome.success}  Aborted: ${r.perOutcome.aborted}  Failed: ${r.perOutcome.failed}  Running: ${r.perOutcome.running}`);
+    console.log('');
+    console.log('Per pipeline:');
+    for (const [p, s] of Object.entries(r.perPipeline)) {
+      const medMs = s.durationsMs[Math.floor(s.durationsMs.length / 2)];
+      const med = s.durationsMs.length && medMs !== undefined ? `${Math.round(medMs / 1000)}s` : '-';
+      console.log(`  ${p}: ${s.count} runs   median ${med}`);
+    }
+    console.log('');
+    console.log('Gates:');
+    for (const [g, n] of Object.entries(r.gateFires)) console.log(`  ${g}: ${n} fired`);
+    console.log('');
+    console.log('Token estimate:');
+    console.log(`  Actual: ~$${r.estimatedCostUsd.toFixed(2)}`);
+    if (r.naiveEstimatedCostUsd !== undefined) {
+      console.log(`  Naïve:  ~$${r.naiveEstimatedCostUsd.toFixed(2)}`);
+      console.log(`  Savings: ${r.savingsPct?.toFixed(0)}%`);
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(paint(`✗ stats: ${err instanceof Error ? err.message : String(err)}\n`, 'red'));
     return 2;
   }
 }

@@ -583,6 +583,36 @@ describe('parseArgs — --filter= repeatable flag (v0.10+)', () => {
   });
 });
 
+describe('args — v0.10.1 flags', () => {
+  it('parses --no-stale-check', () => {
+    const r = parseArgs(['memory', 'read', 'decisions', '--no-stale-check']);
+    expect(r.noStaleCheck).toBe(true);
+  });
+  it('parses --stage=<name>', () => {
+    const r = parseArgs(['run', 'start', '--stage=bug-fixer', '--run-id=abc']);
+    expect(r.stage).toBe('bug-fixer');
+  });
+  it('parses --older-than=<dur>', () => {
+    const r = parseArgs(['memory', 'clean', '--older-than=14d']);
+    expect(r.olderThan).toBe('14d');
+  });
+  it('parses --keep-last=N (numeric)', () => {
+    const r = parseArgs(['memory', 'compact', '--keep-last=5']);
+    expect(r.keepLast).toBe(5);
+  });
+  it('parses --threshold=N (numeric)', () => {
+    const r = parseArgs(['memory', 'scan-hotspots', '--threshold=3']);
+    expect(r.threshold).toBe(3);
+  });
+  it('parses --orphans, --apply, --compare-naive booleans', () => {
+    const r = parseArgs(['memory', 'clean', '--orphans', '--apply']);
+    expect(r.orphans).toBe(true);
+    expect(r.apply).toBe(true);
+    const s = parseArgs(['stats', '--compare-naive']);
+    expect(s.compareNaive).toBe(true);
+  });
+});
+
 describe('parseArgs — memory/run/gate subcommand routing', () => {
   it('parses `memory init` with subcommand=init', () => {
     const a = parseArgs(['memory', 'init']);
