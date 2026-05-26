@@ -8,6 +8,22 @@
 
 agentcohort installs **16 specialist subagents**, **9 workflow pipelines**, and a **4-layer memory system** into any project. A smart dispatcher right-sizes the pipeline to your task — small fixes stay cheap, sensitive changes (auth / schema / payment) get the full architect + expert-council treatment.
 
+## Why you need this
+
+Default Claude Code has 4 problems:
+
+1. **Costs spiral** — every task spawns a full pipeline, even "where is X?"
+2. **No discipline** — easy to ship shallow fixes that skip tests / review
+3. **No memory** — every conversation starts from zero, reinvents past decisions
+4. **Hard to review** — Claude writes code, you read code; expensive for both sides
+
+agentcohort fixes all 4:
+
+- **50-70% lower token spend** — smart dispatcher routes lookups to inline answers (~100% saved), small fixes to 4-agent pipelines (~45% saved), keeps full pipeline only for normal+ work
+- **16 specialist agents with strict roles** — scout explores, architect designs, planner locks scope, implementer codes, reviewer reviews. No jack-of-all-trades.
+- **4-layer memory** — the dispatcher reads past decisions + bug patterns + hotspots before classifying, surfaces "this looks like a task we shipped last Tuesday"
+- **Human review gates** — pause at architecture + plan checkpoints before expensive opus calls fire
+
 ## Install
 
 ```bash
