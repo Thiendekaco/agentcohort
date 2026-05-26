@@ -227,3 +227,29 @@ describe('status — memory section', () => {
     expect(r.memory.collections['decisions']).toBe(1);
   });
 });
+
+describe('status — v0.10.1 extensions', () => {
+  let memDir: string;
+  beforeEach(() => {
+    memDir = mkdtempSync(join(tmpdir(), 'agentcohort-status-v10_1-'));
+    execSync('git init -q', { cwd: memDir });
+    execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: memDir });
+  });
+  afterEach(() => rmSync(memDir, { recursive: true, force: true }));
+
+  it('reports new collections in the memory section', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    const r = runStatus({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    expect((r as any).memory.collections.hotspots).toBe(0);
+    expect((r as any).memory.collections.conventions).toBe(0);
+    expect((r as any).memory.collections['module-map']).toBe(0);
+  });
+
+  it('reports OpenWolf state when present', () => {
+    runMemoryInit({ cwd: memDir, mode: 'default' });
+    require('node:fs').mkdirSync(join(memDir, '.wolf'));
+    require('node:fs').writeFileSync(join(memDir, '.wolf/cerebrum.md'), '# cerebrum');
+    const r = runStatus({ cwd: memDir, templatesDir: bundledTemplatesDir() });
+    expect((r as any).memory.openWolf?.hasCerebrum).toBe(true);
+  });
+});

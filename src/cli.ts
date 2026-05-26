@@ -1703,6 +1703,29 @@ function formatStatusReport(report: StatusReport): string {
   }
   out.push('');
 
+  // Memory
+  const memory = report.memory;
+  out.push(paint('Memory:', 'bold'));
+  out.push(`  ${pad('Initialized:', 18)} ${memory.initialized ? paint('yes', 'green') : paint('no', 'gray')}`);
+  if (memory.initialized) {
+    const collEntries = Object.entries(memory.collections);
+    if (collEntries.length > 0) {
+      out.push(`  ${pad('Collections:', 18)} ${collEntries.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    }
+    out.push(`  ${pad('Runs tracked:', 18)} ${memory.runsTracked}`);
+    out.push(`  ${pad('Git policy:', 18)} ${memory.gitPolicy}`);
+    if (memory.openWolf && (memory.openWolf.hasAnatomy || memory.openWolf.hasCerebrum)) {
+      const parts: string[] = [];
+      if (memory.openWolf.hasAnatomy) parts.push('anatomy');
+      if (memory.openWolf.hasCerebrum) parts.push('cerebrum');
+      out.push(`  ${pad('OpenWolf:', 18)} ${parts.join(' + ')} detected (agents prefer on conflict)`);
+    }
+    if (memory.stageCoveragePct !== null && memory.stageCoveragePct !== undefined) {
+      out.push(`  ${pad('Stage coverage:', 18)} ${memory.stageCoveragePct.toFixed(0)}% (of last 10 runs)`);
+    }
+  }
+  out.push('');
+
   // Planned
   if (report.planned.length > 0) {
     out.push(paint('Coming in future versions', 'bold', 'gray'));
