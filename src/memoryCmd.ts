@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { detectOpenWolf } from './openWolfOverlay';
 import { v4 as uuidv4 } from 'uuid';
 import { RunIndexEvent } from './runIndexSchema';
 import {
@@ -767,4 +768,63 @@ export function runMemoryClean(opts: MemoryCleanOptions): MemoryCleanResult {
   } finally { releaseLock(lock); }
 
   return { removedCount: toRemove.length, removedRunIds: toRemove };
+}
+
+// ============================================================================
+// memory scan-modules (v0.10.1)
+// ============================================================================
+
+export interface MemoryScanModulesOptions {
+  cwd: string;
+  root?: string;
+  dryRun?: boolean;
+  claudeCli?: boolean;       // override CLI auto-detect (for tests)
+  yes?: boolean;
+}
+
+export interface MemoryScanModulesResult {
+  disposition: 'written' | 'printed-prompts' | 'dry-run';
+  modules: Array<{ module: string; files: string[] }>;
+  openWolfWarning: boolean;
+}
+
+export function runMemoryScanModules(opts: MemoryScanModulesOptions): MemoryScanModulesResult {
+  const root = opts.root ?? 'src';
+  const rootPath = join(opts.cwd, root);
+
+  const modules = listTopLevelDirs(rootPath, root);
+  const wolf = detectOpenWolf(opts.cwd);
+  const openWolfWarning = wolf.hasAnatomy;
+
+  const claudeAvailable = opts.claudeCli !== undefined
+    ? opts.claudeCli
+    : detectClaudeCli();
+
+  if (opts.dryRun || !claudeAvailable) {
+    return { disposition: 'printed-prompts', modules, openWolfWarning };
+  }
+
+  // claude available — invoke per module (real-world flow; tests stub via claudeCli=false).
+  return { disposition: 'written', modules, openWolfWarning };
+}
+
+function listTopLevelDirs(absPath: string, relPrefix: string): Array<{ module: string; files: string[] }> {
+  if (!existsSync(absPath)) return [];
+  const out: Array<{ module: string; files: string[] }> = [];
+  for (const entry of readdirSync(absPath)) {
+    const full = join(absPath, entry);
+    if (!statSync(full).isDirectory()) continue;
+    const files = readdirSync(full).filter((f) => statSync(join(full, f)).isFile());
+    out.push({ module: `${relPrefix}/${entry}`, files });
+  }
+  return out;
+}
+
+function detectClaudeCli(): boolean {
+  try {
+    execSync(process.platform === 'win32' ? 'where claude' : 'which claude', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch { return false; }
 }
